@@ -1,0 +1,14 @@
+# GoMCP Framework Configuration File
+# This file defines agents, registries, servers, and tools using simple YAML syntax
+
+# API Key for authentication (also checks AGENTCONFIG env variable)
+
+agents:
+  - agent_id: "weather_agent"
+    description: "Weather specialist agent"
+    llm:
+      api_key: "${WEATHER_AGENT_API_KEY}"
+      model: "gpt-4o"
+    servers:
+      - "./servers/weather_server.yaml"
+      - "./servers/location_server.yaml"

@@ -1,0 +1,45 @@
+# Server Configuration
+server_id: "weather_server"
+description: "Provides current weather and forecast data"
+
+# Runtime configuration - ALWAYS required
+runtime:
+  type: "python"  # "python", "node", "go", "ruby", etc.
+  command: "python"
+  args: ["handlers/weather_server.py"]
+  port: 8080  # Port this server listens on
+
+# Tools provided by this server
+tools:
+  - tool_id: "get_weather"
+    description: "Get current weather for a city"
+    handler: "get_weather"
+    
+    input_schema:
+      properties:
+        city:
+          type: "string"
+          description: "City name"
+        units:
+          type: "string"
+          description: "Temperature units (celsius/fahrenheit)"
+      
+      required:
+        - city
+
+  - tool_id: "get_forecast"
+    description: "Get weather forecast"
+    handler: "get_forecast"
+    
+    input_schema:
+      properties:
+        city:
+          type: "string"
+          description: "City name"
+        days:
+          type: "number"
+          description: "Number of days (1-7)"
+      
+      required:
+        - city
+        - days

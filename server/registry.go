@@ -2,26 +2,13 @@ package registry
 
 import (
 	"fmt"
-	"strings"
 )
 
-//Each agent registry will have its own ID and description
-
 type Registry struct {
-	RegistryID string
 	Servers map[string]*MCPServer
 }
 
-func NewRegistry(
-	registryID string,
-	servers []*MCPServer
-) *Registry {
-	registryID = strings.TrimSpace(registryID)
-
-	if registryID == "" {
-		panic("RegistryID cannot be empty")
-	}
-
+func NewRegistry(servers []*MCPServer) *Registry {
 	if len(servers) == 0 {
 		panic("At least one server must be provided")
 	}
@@ -32,61 +19,62 @@ func NewRegistry(
 		if server == nil {
 			panic("Server cannot be nil")
 		}
-
 		serverMap[server.ServerID] = server
 	}
 
 	return &Registry{
-		RegistryID: registryID,
-		Servers:    serverMap,
+		Servers: serverMap,
 	}
 }
 
-func AddServerToRegistry(
-	registry *Registry,
-	server *MCPServer,
-) {
-	if registry == nil {
-		panic("Registry cannot be nil")
-	}
-
+// AddServer adds a server to the registry
+func (r *Registry) AddServer(server *MCPServer) error {
 	if server == nil {
-		panic("Server cannot be nil")
+		return fmt.Errorf("server cannot be nil")
 	}
 
-	if _, exists := registry.Servers[server.ServerID]; exists {
-		panic(fmt.Sprintf("Server with ID '%s' already exists in the registry", server.ServerID))
+	if _, exists := r.Servers[server.ServerID]; exists {
+		return fmt.Errorf("server with ID '%s' already exists", server.ServerID)
 	}
 
-	registry.Servers[server.ServerID] = server
+	r.Servers[server.ServerID] = server
+	return nil
 }
 
-func RemoveServerFromRegistry(
-	registry *Registry,
-	serverID string,
-) {
-	if registry == nil {
-		panic("Registry cannot be nil")
+// RemoveServer removes a server from the registry
+func (r *Registry) RemoveServer(serverID string) error {
+	if _, exists := r.Servers[serverID]; !exists {
+		return fmt.Errorf("server with ID '%s' does not exist", serverID)
 	}
 
-	if _, exists := registry.Servers[serverID]; !exists {
-		panic(fmt.Sprintf("Server with ID '%s' does not exist in the registry", serverID))
-	}
-
-	delete(registry.Servers, serverID)
+	delete(r.Servers, serverID)
+	return nil
 }
 
-func GetServerFromRegistry(
-	registry *Registry,
-	serverID string,
-) *MCPServer {
-	if registry == nil {
-		panic("Registry cannot be nil")
+// GetServer retrieves a server from the registry
+func (r *Registry) GetServer(serverID string) (*MCPServer, error) {
+	if server, exists := r.Servers[serverID]; exists {
+		return server, nil
 	}
 
-	if server, exists := registry.Servers[serverID]; exists {
-		return server
+	return nil, fmt.Errorf("server with ID '%s' does not exist", serverID)
+}
+
+// ListServers returns all servers in the registry
+func (r *Registry) ListServers() []*MCPServer {
+	servers := make([]*MCPServer, 0, len(r.Servers))
+	for _, server := range r.Servers {
+		servers = append(servers, server)
+	}
+	return servers
+}
+
+// ExecuteTool executes a tool from a specific server
+func (r *Registry) ExecuteTool(serverID, toolID string, input map[string]interface{}) (interface{}, error) {
+	server, err := r.GetServer(serverID)
+	if err != nil {
+		return nil, err
 	}
 
-	panic(fmt.Sprintf("Server with ID '%s' does not exist in the registry", serverID))
+	return server.ExecuteTool(toolID, input)
 }
