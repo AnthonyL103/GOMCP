@@ -10,6 +10,7 @@ func isString(val interface{}) bool {
 	return ok
 }
 
+
 type AgentDetails struct {
 	AgentID string
 	Description string

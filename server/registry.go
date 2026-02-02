@@ -1,4 +1,4 @@
-package registry
+package server
 
 import (
 	"fmt"
@@ -8,22 +8,9 @@ type Registry struct {
 	Servers map[string]*MCPServer
 }
 
-func NewRegistry(servers []*MCPServer) *Registry {
-	if len(servers) == 0 {
-		panic("At least one server must be provided")
-	}
-
-	serverMap := make(map[string]*MCPServer)
-	
-	for _, server := range servers {
-		if server == nil {
-			panic("Server cannot be nil")
-		}
-		serverMap[server.ServerID] = server
-	}
-
+func NewRegistry() *Registry {
 	return &Registry{
-		Servers: serverMap,
+		Servers: make(map[string]*MCPServer),
 	}
 }
 

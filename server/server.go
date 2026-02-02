@@ -3,18 +3,20 @@ package server
 import (
 	"fmt"
 	"strings"
+
+	"github.com/AnthonyL103/GOMCP/tool"
 )
 
 type MCPServer struct {
 	ServerID string
 	Description string
-	Tools map[string]*Tool
+	Tools map[string]*tool.Tool
 }
 
 func NewMCPServer(
 	serverID string,
 	description string,
-	tools []*Tool,
+	tools []*tool.Tool,
 ) *MCPServer {
 	serverID = strings.TrimSpace(serverID)
 	description = strings.TrimSpace(description)
@@ -33,12 +35,12 @@ func NewMCPServer(
 
 	
 	//ensure that no tools are nil as a safeguard and create tool map
-	toolMap := make(map[string]*Tool)
-	for _, tool := range tools {
-		if tool == nil {
+	toolMap := make(map[string]*tool.Tool)
+	for _, t := range tools {
+		if t == nil {
 			panic("Tool cannot be nil")
 		}
-		toolMap[tool.Name] = tool
+		toolMap[t.ToolID] = t
 	}
 
 	return &MCPServer{
@@ -49,7 +51,7 @@ func NewMCPServer(
 }
 
 func (s *MCPServer) AddToolToServer(
-	tool *Tool,
+	t *tool.Tool,
 ) *MCPServer{
 	if s == nil {
 		panic("Server cannot be nil")
@@ -57,11 +59,11 @@ func (s *MCPServer) AddToolToServer(
 	if tool == nil {
 		panic("Tool cannot be nil")
 	}
-	if _, exists := s.Tools[tool.Name]; exists {
-		panic(fmt.Sprintf("Tool with name '%s' already exists in the server", tool.Name))
+	if _, exists := s.Tools[t.ToolID]; exists {
+		panic(fmt.Sprintf("Tool with id '%s' already exists in the server", t.ToolID))
 	}
 
-	s.Tools[tool.Name] = tool
+	s.Tools[t.ToolID] = t
 }
 
 func (s *MCPServer) RemoveToolFromServer(
