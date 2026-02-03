@@ -1,8 +1,13 @@
-package Agent
+package agent
 
 import (
 	"fmt"
 	"strings"
+	"github.com/AnthonyL103/GOMCP/tool"
+	"github.com/AnthonyL103/GOMCP/registry"
+	"github.com/AnthonyL103/GOMCP/server"
+
+	
 )
 
 func isString(val interface{}) bool {
@@ -17,7 +22,7 @@ type AgentDetails struct {
 	ServerCount int
 	ToolCount int
 	// ServerTools maps ServerID -> map of ToolName -> Tool
-	ServerTools map[string]map[string]*Tool
+	ServerTools map[string]map[string]*tool.Tool
 }
 
 type LLMConfig struct {
@@ -29,7 +34,7 @@ type LLMConfig struct {
 type Agent struct {
 	AgentID string
 	Description string
-	Registry *Registry
+	Registry *registry.Registry
 	llmConfig *LLMConfig
 }
 
@@ -83,7 +88,7 @@ func validateLLMConfig(llmConfig *LLMConfig) {
 func NewAgent(
 	agentID string,
 	description string,
-	registry *Registry,
+	registry *registry.Registry,
 	llmConfig *LLMConfig,
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
@@ -115,13 +120,13 @@ func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
 		panic("Agent cannot be nil")
 	}
 
-	servers := make(map[string]*MCPServer)
-	serverTools := make(map[string]map[string]*Tool)
+	servers := make(map[string]*server.MCPServer)
+	serverTools := make(map[string]map[string]*tool.Tool)
 	toolCount := 0
 	
 	for _, server := range a.Registry.Servers {
 		servers[server.ServerID] = server
-		serverTools[server.ServerID] = make(map[string]*Tool)
+		serverTools[server.ServerID] = make(map[string]*tool.Tool)
 
 		for toolName, tool := range server.Tools {
 			serverTools[server.ServerID][toolName] = tool

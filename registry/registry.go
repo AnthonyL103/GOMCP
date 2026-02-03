@@ -1,30 +1,31 @@
-package server
+package registry
 
 import (
 	"fmt"
+	"github.com/AnthonyL103/GOMCP/server"
 )
 
 type Registry struct {
-	Servers map[string]*MCPServer
+	Servers map[string]*server.MCPServer
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		Servers: make(map[string]*MCPServer),
+		Servers: make(map[string]*server.MCPServer),
 	}
 }
 
 // AddServer adds a server to the registry
-func (r *Registry) AddServer(server *MCPServer) error {
-	if server == nil {
+func (r *Registry) AddServer(srv *server.MCPServer) error {
+	if srv == nil {
 		return fmt.Errorf("server cannot be nil")
 	}
 
-	if _, exists := r.Servers[server.ServerID]; exists {
-		return fmt.Errorf("server with ID '%s' already exists", server.ServerID)
+	if _, exists := r.Servers[srv.ServerID]; exists {
+		return fmt.Errorf("server with ID '%s' already exists", srv.ServerID)
 	}
 
-	r.Servers[server.ServerID] = server
+	r.Servers[srv.ServerID] = srv
 	return nil
 }
 
@@ -39,29 +40,31 @@ func (r *Registry) RemoveServer(serverID string) error {
 }
 
 // GetServer retrieves a server from the registry
-func (r *Registry) GetServer(serverID string) (*MCPServer, error) {
-	if server, exists := r.Servers[serverID]; exists {
-		return server, nil
+func (r *Registry) GetServer(serverID string) (*server.MCPServer, error) {
+	if srv, exists := r.Servers[serverID]; exists {
+		return srv, nil
 	}
 
 	return nil, fmt.Errorf("server with ID '%s' does not exist", serverID)
 }
 
 // ListServers returns all servers in the registry
-func (r *Registry) ListServers() []*MCPServer {
-	servers := make([]*MCPServer, 0, len(r.Servers))
-	for _, server := range r.Servers {
-		servers = append(servers, server)
+func (r *Registry) ListServers() []*server.MCPServer {
+	servers := make([]*server.MCPServer, 0, len(r.Servers))
+	for _, srv := range r.Servers {
+		servers = append(servers, srv)
 	}
 	return servers
 }
 
 // ExecuteTool executes a tool from a specific server
+/*
 func (r *Registry) ExecuteTool(serverID, toolID string, input map[string]interface{}) (interface{}, error) {
-	server, err := r.GetServer(serverID)
+	srv, err := r.GetServer(serverID)
 	if err != nil {
 		return nil, err
 	}
 
-	return server.ExecuteTool(toolID, input)
+	return srv.ExecuteTool(toolID, input)
 }
+*/

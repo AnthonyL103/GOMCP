@@ -8,7 +8,7 @@ import (
     "gopkg.in/yaml.v3"
 
     "github.com/AnthonyL103/GOMCP/agent"
-    "github.com/AnthonyL103/GOMCP/server"
+    "github.com/AnthonyL103/GOMCP/registry"
     "github.com/AnthonyL103/GOMCP/protocol/parseserverprotocol"
 )
 
@@ -31,9 +31,9 @@ type LLMConfigYAML struct {
     Model  string `yaml:"model"`
 }
 
-func ParseAgentConfig() (*agent.Agent, *server.Registry, error) {
+func ParseAgentConfig() (*agent.Agent, *registry.Registry, error) {
     // Read agent.yaml from project root
-    data, err := os.ReadFile("./agent.yaml")
+    data, err := os.ReadFile("./agentconfig.yaml")
     if err != nil {
         return nil, nil, fmt.Errorf("agent.yaml not found in project root: %w", err)
     }
@@ -64,14 +64,16 @@ func ParseAgentConfig() (*agent.Agent, *server.Registry, error) {
     }
 
     // Create registry
-    reg := server.NewRegistry()
+    reg := registry.NewRegistry()
 
     // Parse and register each server
     for _, serverPath := range agentDef.Servers {
-        server, err := parseserverprotocol.ParseServerConfig(serverPath)
+        server, runtimeconfig, err := parseserverprotocol.ParseServerConfig(serverPath)
         if err != nil {
             return nil, nil, fmt.Errorf("failed to parse server %s: %w", serverPath, err)
         }
+        // Store runtime config on the server for later use when executing
+        server.RuntimeConfig = runtimeconfig
         err = reg.AddServer(server)
         if err != nil {
             return nil, nil, fmt.Errorf("failed to register server %s: %w", server.ServerID, err)
@@ -113,7 +115,7 @@ func TestConfigParser() {
     }
 
     // print agent summary
-    details := ag.GetAgentDetails()
+    details := ag.GetAgentDetails(ag)
     fmt.Printf("Agent ID: %s\nDescription: %s\nServerCount: %d\nToolCount: %d\n",
         details.AgentID, details.Description, details.ServerCount, details.ToolCount)
 
@@ -121,8 +123,8 @@ func TestConfigParser() {
     for serverID, server := range reg.Servers {
         fmt.Printf("Server ID: '%s'\nServer description: '%s'\n", serverID, server.Description)
 
-        for toolName := range server.Tools {
-            fmt.Printf("  Tool Key: '%s'\n", toolName)
+        for toolName, tool := range server.Tools {
+            fmt.Printf("  Tool Key: '%s' Tool Handler '%s' Tool Description '%s' \n", toolName, tool.Handler, tool.Description)
         }
     }
 }

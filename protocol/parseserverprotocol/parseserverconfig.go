@@ -1,13 +1,60 @@
 package parseserverprotocol
 
 import (
-    "fmt"
-    "os"
-    "gopkg.in/yaml.v3"
+	"fmt"
+	"os"
+	"gopkg.in/yaml.v3"
 
-    "github.com/AnthonyL103/GOMCP/server"
-    "github.com/AnthonyL103/GOMCP/tool"
+	"github.com/AnthonyL103/GOMCP/server"
+	"github.com/AnthonyL103/GOMCP/tool"
 )
+
+// ServerConfig represents the YAML server configuration
+type ServerConfig struct {
+	ServerID    string       `yaml:"server_id"`
+	Description string       `yaml:"description"`
+	Tools       []ToolConfig `yaml:"tools"`
+	Runtime     RuntimeConfig `yaml:"runtime"`
+}
+
+// ToolConfig represents a tool in the YAML configuration
+type ToolConfig struct {
+	ToolID      string              `yaml:"tool_id"`
+	Description string              `yaml:"description"`
+	Handler     string              `yaml:"handler"`
+	InputSchema InputSchemaConfig    `yaml:"input_schema"`
+}
+
+// InputSchemaConfig represents the input schema in YAML
+type InputSchemaConfig struct {
+	Properties map[string]PropertyConfig `yaml:"properties"`
+	Required   []string                  `yaml:"required"`
+}
+
+// PropertyConfig represents a property schema in YAML
+type PropertyConfig struct {
+	Type        string `yaml:"type"`
+	Description string `yaml:"description"`
+}
+
+// RuntimeConfig represents runtime configuration
+type RuntimeConfig struct {
+	Timeout int `yaml:"timeout"`
+}
+
+// validateServerConfig validates the server configuration
+func validateServerConfig(config *ServerConfig) error {
+	if config.ServerID == "" {
+		return fmt.Errorf("server_id cannot be empty")
+	}
+	if config.Description == "" {
+		return fmt.Errorf("description cannot be empty")
+	}
+	if len(config.Tools) == 0 {
+		return fmt.Errorf("at least one tool must be defined")
+	}
+	return nil
+}
 
 func ParseServerConfig(filePath string) (*server.MCPServer, *RuntimeConfig, error) {
     // Read and unmarshal YAML
@@ -53,7 +100,7 @@ func ParseServerConfig(filePath string) (*server.MCPServer, *RuntimeConfig, erro
         cleanToolID, cleanDesc, cleanHandler, cleanSchema, err := tool.ValidateToolConfig(
             tc.ToolID,
             tc.Description,
-            "",
+            tc.Handler,
             schema,
         )
         if err != nil {
@@ -64,7 +111,7 @@ func ParseServerConfig(filePath string) (*server.MCPServer, *RuntimeConfig, erro
             ToolID:      cleanToolID,
             Description: cleanDesc,
             InputSchema: cleanSchema,
-            Handler:     tc.Handler,
+            Handler:     cleanHandler,
         }
 
         tools = append(tools, t)

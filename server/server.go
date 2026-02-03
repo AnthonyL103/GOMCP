@@ -7,10 +7,16 @@ import (
 	"github.com/AnthonyL103/GOMCP/tool"
 )
 
+func isString(val interface{}) bool {
+	_, ok := val.(string)
+	return ok
+}
+
 type MCPServer struct {
 	ServerID string
 	Description string
 	Tools map[string]*tool.Tool
+	RuntimeConfig interface{} // Stores runtime configuration from parser
 }
 
 func NewMCPServer(
@@ -56,7 +62,7 @@ func (s *MCPServer) AddToolToServer(
 	if s == nil {
 		panic("Server cannot be nil")
 	}
-	if tool == nil {
+	if t == nil {
 		panic("Tool cannot be nil")
 	}
 	if _, exists := s.Tools[t.ToolID]; exists {
@@ -64,6 +70,7 @@ func (s *MCPServer) AddToolToServer(
 	}
 
 	s.Tools[t.ToolID] = t
+	return s
 }
 
 func (s *MCPServer) RemoveToolFromServer(
@@ -80,11 +87,12 @@ func (s *MCPServer) RemoveToolFromServer(
 		panic(fmt.Sprintf("Tool with name '%s' does not exist in the server", toolName))
 	}
 	delete(s.Tools, toolName)
+	return s
 }
 
 func (s *MCPServer) GetToolFromServer(
 	toolName string,
-) *Tool {
+) *tool.Tool {
 	if s == nil {
 		panic("Server cannot be nil")
 	}
@@ -93,8 +101,8 @@ func (s *MCPServer) GetToolFromServer(
 		panic("Tool name cannot be empty")
 	}
 
-	if tool, exists := s.Tools[toolName]; exists {
-		return tool
+	if t, exists := s.Tools[toolName]; exists {
+		return t
 	}
 	panic(fmt.Sprintf("Tool with name '%s' does not exist in the server", toolName))
 }

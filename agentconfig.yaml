@@ -7,8 +7,7 @@ agents:
   - agent_id: "weather_agent"
     description: "Weather specialist agent"
     llm:
-      api_key: "${WEATHER_AGENT_API_KEY}"
+      api_key: "gnjrgnjrgnr"
       model: "gpt-4o"
     servers:
-      - "./servers/weather_server.yaml"
-      - "./servers/location_server.yaml"
+      - "C:/Users/antho/GoMCP/serverconfigs/server1config.yaml"
