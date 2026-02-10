@@ -15,6 +15,15 @@ func isString(val interface{}) bool {
 	return ok
 }
 
+func isInt(val interface{}) bool {
+	_, ok := val.(int)
+	return ok
+}
+
+func isFloat(val interface{}) bool {
+	_, ok := val.(float32)
+	return ok
+}
 
 type AgentDetails struct {
 	AgentID string
@@ -26,8 +35,10 @@ type AgentDetails struct {
 }
 
 type LLMConfig struct {
-	APIKey string
-	Model  string
+	APIKey      string
+	Model       string
+	Temperature float32
+	MaxTokens   int
 }
 
 
@@ -35,7 +46,7 @@ type Agent struct {
 	AgentID string
 	Description string
 	Registry *registry.Registry
-	llmConfig *LLMConfig
+	LLMConfig *LLMConfig
 }
 
 //return list of valid models for the user 
@@ -46,16 +57,24 @@ func getModelList() []string {
 	}
 }
 
-func validateLLMConfig(llmConfig *LLMConfig) {
-	if llmConfig == nil {
+func validateLLMConfig(LLMConfig *LLMConfig) {
+	if LLMConfig == nil {
 		panic("LLMConfig cannot be nil")
 	}
 
-	if llmConfig.APIKey == "" || !isString(llmConfig.APIKey) {
+	if LLMConfig.APIKey == "" || !isString(LLMConfig.APIKey) {
 		panic("LLMConfig.APIKey is required and must be a non-empty string")
 	}
-	if llmConfig.Model == "" || !isString(llmConfig.Model) {
+	if LLMConfig.Model == "" || !isString(LLMConfig.Model) {
 		panic("LLMConfig.Model is required and must be a non-empty string")
+	}
+
+	if LLMConfig.Temperature == 0 || !isFloat(LLMConfig.Temperature) {
+		panic("LLMConfig.Temperature is required and must be an float")
+	}
+
+	if LLMConfig.MaxTokens == 0 || !isInt(LLMConfig.MaxTokens) {
+		panic("LLMConfig.MaxTokens is required and must be an int")
 	}
 	
 	validModels := map[string]bool{
@@ -78,8 +97,8 @@ func validateLLMConfig(llmConfig *LLMConfig) {
 		"claude-3-5-haiku-20241022":    true,
 	}
 	
-	if !validModels[llmConfig.Model] {
-		panic(fmt.Sprintf("Invalid model '%s'. Supported models: %v", llmConfig.Model, getModelList()))
+	if !validModels[LLMConfig.Model] {
+		panic(fmt.Sprintf("Invalid model '%s'. Supported models: %v", LLMConfig.Model, getModelList()))
 	}
 }
 
@@ -89,7 +108,7 @@ func NewAgent(
 	agentID string,
 	description string,
 	registry *registry.Registry,
-	llmConfig *LLMConfig,
+	LLMConfig *LLMConfig,
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
 	description = strings.TrimSpace(description)
@@ -105,13 +124,14 @@ func NewAgent(
 		panic("Registry cannot be nil")
 	}
 
-	validateLLMConfig(llmConfig)
+
+	validateLLMConfig(LLMConfig)
 
 	return &Agent{
 		AgentID:     agentID,
 		Description: description,
 		Registry:    registry,
-		llmConfig:   llmConfig,
+		LLMConfig:   LLMConfig,
 	}
 }
 

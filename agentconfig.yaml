@@ -9,5 +9,7 @@ agents:
     llm:
       api_key: "gnjrgnjrgnr"
       model: "gpt-4o"
+      temperature: 55.5
+      max_tokens: 555
     servers:
       - "C:/Users/antho/GoMCP/serverconfigs/server1config.yaml"

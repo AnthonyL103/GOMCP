@@ -27,26 +27,28 @@ type AgentDefinition struct {
 
 // LLMConfigYAML represents LLM settings from YAML
 type LLMConfigYAML struct {
-    APIKey string `yaml:"api_key"`
-    Model  string `yaml:"model"`
+    APIKey      string  `yaml:"api_key"`
+    Model       string  `yaml:"model"`
+    Temperature float32 `yaml:"temperature"`
+    MaxTokens   int     `yaml:"max_tokens"`
 }
 
-func ParseAgentConfig() (*agent.Agent, *registry.Registry, error) {
+func ParseAgentConfig() (*agent.Agent, error) {
     // Read agent.yaml from project root
     data, err := os.ReadFile("./agentconfig.yaml")
     if err != nil {
-        return nil, nil, fmt.Errorf("agent.yaml not found in project root: %w", err)
+        return nil, fmt.Errorf("agent.yaml not found in project root: %w", err)
     }
 
     // Parse YAML
     var config AgentConfig
     if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, nil, fmt.Errorf("failed to parse agent.yaml: %w", err)
+        return nil, fmt.Errorf("failed to parse agent.yaml: %w", err)
     }
 
     // For now, use the first agent (can extend to support multiple later)
     if len(config.Agents) == 0 {
-        return nil, nil, fmt.Errorf("no agents defined in config")
+        return nil, fmt.Errorf("no agents defined in config")
     }
 
     agentDef := config.Agents[0]
@@ -54,13 +56,15 @@ func ParseAgentConfig() (*agent.Agent, *registry.Registry, error) {
     // Resolve API key (check env variable if needed)
     apiKey := resolveEnvVar(agentDef.LLM.APIKey)
     if apiKey == "" {
-        return nil, nil, fmt.Errorf("API key not found for agent %s", agentDef.AgentID)
+        return nil, fmt.Errorf("API key not found for agent %s", agentDef.AgentID)
     }
 
     // Create LLMConfig for Agent constructor
-    llmConfig := &agent.LLMConfig{
-        APIKey: apiKey,
-        Model:  agentDef.LLM.Model,
+    LLMConfig := &agent.LLMConfig{
+        APIKey:      apiKey,
+        Model:       agentDef.LLM.Model,
+        Temperature: agentDef.LLM.Temperature,
+        MaxTokens:   agentDef.LLM.MaxTokens,
     }
 
     // Create registry
@@ -70,13 +74,13 @@ func ParseAgentConfig() (*agent.Agent, *registry.Registry, error) {
     for _, serverPath := range agentDef.Servers {
         server, runtimeconfig, err := parseserverprotocol.ParseServerConfig(serverPath)
         if err != nil {
-            return nil, nil, fmt.Errorf("failed to parse server %s: %w", serverPath, err)
+            return nil, fmt.Errorf("failed to parse server %s: %w", serverPath, err)
         }
         // Store runtime config on the server for later use when executing
         server.RuntimeConfig = runtimeconfig
         err = reg.AddServer(server)
         if err != nil {
-            return nil, nil, fmt.Errorf("failed to register server %s: %w", server.ServerID, err)
+            return nil, fmt.Errorf("failed to register server %s: %w", server.ServerID, err)
         }
     }
 
@@ -85,10 +89,10 @@ func ParseAgentConfig() (*agent.Agent, *registry.Registry, error) {
         agentDef.AgentID,
         agentDef.Description,
         reg,
-        llmConfig,
+        LLMConfig,
     )
 
-    return ag, reg, nil
+    return ag, nil
 }
 
 // resolveEnvVar resolves environment variables in format ${VAR_NAME}
@@ -104,7 +108,7 @@ func resolveEnvVar(value string) string {
 }
 
 func TestConfigParser() {
-    ag, reg, err := ParseAgentConfig()
+    ag, err := ParseAgentConfig()
     if err != nil {
         fmt.Println("ParseAgentConfig error:", err)
         return
@@ -120,7 +124,7 @@ func TestConfigParser() {
         details.AgentID, details.Description, details.ServerCount, details.ToolCount)
 
     // iterate registry servers (map[string]*MCPServer)
-    for serverID, server := range reg.Servers {
+    for serverID, server := range ag.Registry.Servers {
         fmt.Printf("Server ID: '%s'\nServer description: '%s'\n", serverID, server.Description)
 
         for toolName, tool := range server.Tools {
