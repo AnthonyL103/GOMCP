@@ -16,13 +16,21 @@ type MCPServer struct {
 	ServerID string
 	Description string
 	Tools map[string]*tool.Tool
-	RuntimeConfig interface{} // Stores runtime configuration from parser
+	RuntimeConfig *RuntimeConfig
+}
+
+type RuntimeConfig struct {
+	Type    string
+	Command string
+	Args    []string
+	Port    int
 }
 
 func NewMCPServer(
 	serverID string,
 	description string,
 	tools []*tool.Tool,
+	runtimeconfig *RuntimeConfig
 ) *MCPServer {
 	serverID = strings.TrimSpace(serverID)
 	description = strings.TrimSpace(description)
@@ -53,6 +61,7 @@ func NewMCPServer(
 		ServerID:    serverID,
 		Description: description,
 		Tools:       toolMap,
+		RunTimeConfig: runtimeconfig
 	}
 }
 

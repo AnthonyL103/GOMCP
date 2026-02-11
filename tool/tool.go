@@ -7,19 +7,19 @@ import (
 
 type Tool struct {
 	ToolID      string
-	Description string
+	Description string 
 	InputSchema JSONSchema
 	Handler     string
 }
 
 type JSONSchema struct {
-	Properties map[string]PropertySchema
-	Required   []string
+	Properties map[string]PropertySchema `json:"properties"`
+	Required   []string					 `json:"required"`
 }
 
 type PropertySchema struct {
-	Type        string
-	Description string
+	Type        string `json:"type"`
+	Description string `json:"description"`
 }
 
 // ValidateToolConfig validates tool configuration and returns sanitized values

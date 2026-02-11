@@ -1,3 +1,4 @@
+// protocol/parseserverprotocol/parseserverprotocol.go
 package parseserverprotocol
 
 import (
@@ -14,15 +15,23 @@ type ServerConfig struct {
 	ServerID    string       `yaml:"server_id"`
 	Description string       `yaml:"description"`
 	Tools       []ToolConfig `yaml:"tools"`
-	Runtime     RuntimeConfig `yaml:"runtime"`
+	Runtime     RuntimeConfigYAML `yaml:"runtime"` // YAML version
+}
+
+// RuntimeConfigYAML for deserializing from YAML
+type RuntimeConfigYAML struct {
+	Type    string   `yaml:"type"`
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+	Port    int      `yaml:"port"`
 }
 
 // ToolConfig represents a tool in the YAML configuration
 type ToolConfig struct {
-	ToolID      string              `yaml:"tool_id"`
-	Description string              `yaml:"description"`
-	Handler     string              `yaml:"handler"`
-	InputSchema InputSchemaConfig    `yaml:"input_schema"`
+	ToolID      string            `yaml:"tool_id"`
+	Description string            `yaml:"description"`
+	Handler     string            `yaml:"handler"`
+	InputSchema InputSchemaConfig `yaml:"input_schema"`
 }
 
 // InputSchemaConfig represents the input schema in YAML
@@ -37,11 +46,6 @@ type PropertyConfig struct {
 	Description string `yaml:"description"`
 }
 
-// RuntimeConfig represents runtime configuration
-type RuntimeConfig struct {
-	Timeout int `yaml:"timeout"`
-}
-
 // validateServerConfig validates the server configuration
 func validateServerConfig(config *ServerConfig) error {
 	if config.ServerID == "" {
@@ -53,70 +57,91 @@ func validateServerConfig(config *ServerConfig) error {
 	if len(config.Tools) == 0 {
 		return fmt.Errorf("at least one tool must be defined")
 	}
+	// Validate runtime
+	if config.Runtime.Type == "" {
+		return fmt.Errorf("runtime.type cannot be empty")
+	}
+	if config.Runtime.Command == "" {
+		return fmt.Errorf("runtime.command cannot be empty")
+	}
 	return nil
 }
 
-func ParseServerConfig(filePath string) (*server.MCPServer, *RuntimeConfig, error) {
-    // Read and unmarshal YAML
-    data, err := os.ReadFile(filePath)
-    if err != nil {
-        return nil, nil, fmt.Errorf("failed to read server config at %s: %w", filePath, err)
-    }
+func ParseServerConfig(filePath string) (*server.MCPServer, *server.RuntimeConfig, error) {
+	// Read and unmarshal YAML
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read server config at %s: %w", filePath, err)
+	}
 
-    var config ServerConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, nil, fmt.Errorf("failed to parse YAML at %s: %w", filePath, err)
-    }
+	var config ServerConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse YAML at %s: %w", filePath, err)
+	}
 
-    // Validate server-level config
-    if err := validateServerConfig(&config); err != nil {
-        return nil, nil, fmt.Errorf("invalid server config at %s: %w", filePath, err)
-    }
+	// Validate server-level config
+	if err := validateServerConfig(&config); err != nil {
+		return nil, nil, fmt.Errorf("invalid server config at %s: %w", filePath, err)
+	}
 
-    handlerSet := make(map[string]string)
+	handlerSet := make(map[string]string)
 
-    // Create tools using the same validation logic
-    tools := make([]*tool.Tool, 0, len(config.Tools))
-    for _, tc := range config.Tools {
+	// Create tools
+	tools := make([]*tool.Tool, 0, len(config.Tools))
+	for _, tc := range config.Tools {
+		if _, exists := handlerSet[tc.Handler]; exists {
+			return nil, nil, fmt.Errorf("duplicate handler '%s' found in tools at %s", tc.Handler, filePath)
+		}
+		handlerSet[tc.Handler] = tc.ToolID
 
-        if _, exists := handlerSet[tc.Handler]; exists {
-            return nil, nil, fmt.Errorf("duplicate handler '%s' found in tools at %s", tc.Handler, filePath)
-        }
-        handlerSet[tc.Handler] = tc.ToolID
+		props := make(map[string]tool.PropertySchema)
+		for name, prop := range tc.InputSchema.Properties {
+			props[name] = tool.PropertySchema{
+				Type:        prop.Type,
+				Description: prop.Description,
+			}
+		}
 
-        props := make(map[string]tool.PropertySchema)
-        for name, prop := range tc.InputSchema.Properties {
-            props[name] = tool.PropertySchema{
-                Type:        prop.Type,
-                Description: prop.Description,
-            }
-        }
+		schema := tool.JSONSchema{
+			Properties: props,
+			Required:   tc.InputSchema.Required,
+		}
 
-        schema := tool.JSONSchema{
-            Properties: props,
-            Required:   tc.InputSchema.Required,
-        }
+		cleanToolID, cleanDesc, cleanHandler, cleanSchema, err := tool.ValidateToolConfig(
+			tc.ToolID,
+			tc.Description,
+			tc.Handler,
+			schema,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid tool '%s': %w", tc.ToolID, err)
+		}
 
-        cleanToolID, cleanDesc, cleanHandler, cleanSchema, err := tool.ValidateToolConfig(
-            tc.ToolID,
-            tc.Description,
-            tc.Handler,
-            schema,
-        )
-        if err != nil {
-            return nil, nil, fmt.Errorf("invalid tool '%s': %w", tc.ToolID, err)
-        }
+		t := &tool.Tool{
+			ToolID:      cleanToolID,
+			Description: cleanDesc,
+			InputSchema: cleanSchema,
+			Handler:     cleanHandler,
+		}
 
-        t := &tool.Tool{
-            ToolID:      cleanToolID,
-            Description: cleanDesc,
-            InputSchema: cleanSchema,
-            Handler:     cleanHandler,
-        }
+		tools = append(tools, t)
+	}
 
-        tools = append(tools, t)
-    }
+	// Build RuntimeConfig from parsed YAML
+	runtimeConfig := &server.RuntimeConfig{
+		Type:    config.Runtime.Type,
+		Command: config.Runtime.Command,
+		Args:    config.Runtime.Args,
+		Port:    config.Runtime.Port,
+	}
 
-    mcpServer := server.NewMCPServer(config.ServerID, config.Description, tools)
-    return mcpServer, &config.Runtime, nil
+	// Create server with runtime config
+	mcpServer := server.NewMCPServer(
+		config.ServerID,
+		config.Description,
+		tools,
+		runtimeConfig,
+	)
+
+	return mcpServer, runtimeConfig, nil
 }

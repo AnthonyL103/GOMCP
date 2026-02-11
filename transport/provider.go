@@ -1,0 +1,16 @@
+package transport
+
+import (
+    "github.com/AnthonyL103/GOMCP/agent"
+    "github.com/AnthonyL103/GOMCP/protocol/llmprotocol"
+)
+
+// Provider handles LLM API communication
+type Provider interface {
+    // SendRequest sends a message and returns the assistant's response
+    // It handles the full cycle: LLM call → tool execution → final response
+    SendRequest(chat *Chat, agent *agent.Agent, userMessage string) (*llmprotocol.LLMResponse, error)
+    
+    // GetProviderName returns the provider name (e.g., "openai", "anthropic")
+    GetProviderName() string
+}
