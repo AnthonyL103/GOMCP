@@ -4,9 +4,9 @@ description: "Provides current weather and forecast data"
 
 # Runtime configuration - ALWAYS required
 runtime:
-  type: "python"  # "python", "node", "go", "ruby", etc.
-  command: "python"
-  args: ["handlers/weather_server.py"]
+  type: "go"  # "python", "node", "go", "ruby", etc.
+  command: "go"
+  args: ['C:\Users\antho\GoMCP\examples\weather_server.go']
   port: 8080  # Port this server listens on
 
 # Tools provided by this server

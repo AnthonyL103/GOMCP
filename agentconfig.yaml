@@ -7,9 +7,9 @@ agents:
   - agent_id: "weather_agent"
     description: "Weather specialist agent"
     llm:
-      api_key: "gnjrgnjrgnr"
-      model: "gpt-4o"
-      temperature: 55.5
+      api_key: 
+      model: "claude-sonnet-4-5-20250929"
+      temperature: 0.2
       max_tokens: 555
     servers:
       - "C:/Users/antho/GoMCP/serverconfigs/server1config.yaml"

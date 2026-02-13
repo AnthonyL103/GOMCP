@@ -30,7 +30,7 @@ func NewMCPServer(
 	serverID string,
 	description string,
 	tools []*tool.Tool,
-	runtimeconfig *RuntimeConfig
+	runtimeconfig *RuntimeConfig,
 ) *MCPServer {
 	serverID = strings.TrimSpace(serverID)
 	description = strings.TrimSpace(description)
@@ -61,7 +61,7 @@ func NewMCPServer(
 		ServerID:    serverID,
 		Description: description,
 		Tools:       toolMap,
-		RunTimeConfig: runtimeconfig
+		RuntimeConfig: runtimeconfig,
 	}
 }
 

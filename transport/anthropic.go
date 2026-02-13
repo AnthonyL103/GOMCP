@@ -7,10 +7,10 @@ import (
     "fmt"
     "io"
     "net/http"
-    "time"
     
     "github.com/AnthonyL103/GOMCP/agent"
     "github.com/AnthonyL103/GOMCP/protocol/llmprotocol"
+    "github.com/AnthonyL103/GOMCP/chat"
 )
 
 type AnthropicProvider struct {
@@ -33,9 +33,9 @@ func (p *AnthropicProvider) GetProviderName() string {
     return "anthropic"
 }
 
-func (p *AnthropicProvider) SendRequest(chat *Chat, ag *agent.Agent, userMessage string) (*llmprotocol.LLMResponse, error) {
+func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
     // Add user message to chat
-    chat.AddUserMessage(userMessage)
+    c.AddUserMessage(userMessage)
     
     // Extract agent instructions
     agentInstructions := llmprotocol.GetAgentInstructions(ag)
@@ -45,7 +45,7 @@ func (p *AnthropicProvider) SendRequest(chat *Chat, ag *agent.Agent, userMessage
     formattedTools := p.buildTools(availableTools)
     
     // Convert chat history to Anthropic format
-    messages := p.buildMessages(chat)
+    messages := p.buildMessages(c)
     
     // Create Anthropic API request
     requestBody := map[string]interface{}{
@@ -63,42 +63,49 @@ func (p *AnthropicProvider) SendRequest(chat *Chat, ag *agent.Agent, userMessage
     // Send request
     response, err := p.sendHTTPRequest(requestBody)
     if err != nil {
-        return nil, err
+        return err
     }
     
-    // Parse response
-    llmResponse, err := p.parseResponse(response)
+    // Parse response - returns primitive values
+    responseText, toolCallID, toolName, toolParams, stopReason, err := p.parseResponse(response)
     if err != nil {
-        return nil, err
+        return err
     }
     
     // Handle tool call - multi-step process
-    if llmResponse.ToolCall != nil {
+    if stopReason == "tool_use" && toolName != "" {
         // Look up the server that owns this tool
-        toolInfo, exists := availableTools[llmResponse.ToolCall.ToolName]
+        toolInfo, exists := availableTools[toolName]
         if !exists {
-            return nil, fmt.Errorf("tool %s not found", llmResponse.ToolCall.ToolName)
+            return fmt.Errorf("tool %s not found", toolName)
         }
         
         // Step 1: Add the tool call message
-        chat.AddAssistantMessage("", &ToolCall{
-            ServerID:   toolInfo.ServerID,  // Get from toolInfo!
-            ToolID:     llmResponse.ToolCall.ToolName,
-            Parameters: llmResponse.ToolCall.Parameters,
-            Reasoning:  llmResponse.ToolCall.Reasoning,
+        c.AddAssistantMessage("", &chat.ToolCall{
+            ServerID:   toolInfo.ServerID,
+            ToolID:     toolName,
+            Handler:    toolInfo.Handler,
+            Parameters: toolParams,
+            Reasoning:  "",
+            ToolUseID:  toolCallID,
         }, nil)
         
-        // Step 2: Execute the tool with serverID
-        toolResult, isError := llmprotocol.ExecuteTool(ag, toolInfo.ServerID, llmResponse.ToolCall)
-        // Step 3: Send tool result back to LLM to get final response
-        // Add tool result to messages for next call
-        messages = p.buildMessages(chat)
+        // Step 2: Execute the tool
+        toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
+            ServerID:   toolInfo.ServerID,
+            ToolID:     toolName,
+            Handler:    toolInfo.Handler,
+            Parameters: toolParams,
+        })
+        
+        // Step 3: Send tool result back to LLM
+        messages = p.buildMessages(c)
         messages = append(messages, map[string]interface{}{
             "role": "user",
             "content": []map[string]interface{}{
                 {
                     "type":        "tool_result",
-                    "tool_use_id": llmResponse.ToolCall.ToolCallID, // Need to track this
+                    "tool_use_id":    toolCallID,
                     "content":     toolResult,
                     "is_error":    isError,
                 },
@@ -109,38 +116,39 @@ func (p *AnthropicProvider) SendRequest(chat *Chat, ag *agent.Agent, userMessage
         requestBody["messages"] = messages
         response2, err := p.sendHTTPRequest(requestBody)
         if err != nil {
-            return nil, err
+            return err
         }
         
-        finalResponse, err := p.parseResponse(response2)
+        finalResponseText, _, _, _, _, err := p.parseResponse(response2)
         if err != nil {
-            return nil, err
+            return err
         }
         
         // Step 4: Add final assistant message with tool result
-        chat.AddAssistantMessage(
-        finalResponse.ResponseText,
-        nil,
-        &ToolResult{
-            ServerID: toolInfo.ServerID,  // Use the same serverID
-            ToolID:   llmResponse.ToolCall.ToolName,
-            Content:  toolResult,
-            IsError:  isError,
-        },
+        c.AddAssistantMessage(
+            finalResponseText,
+            nil,
+            &chat.ToolResult{
+                ServerID: toolInfo.ServerID,
+                ToolID:   toolName,
+                Content:  toolResult,
+                IsError:  isError,
+                ToolUseID: toolCallID,
+            },
         )
         
-        return finalResponse, nil
+        return nil
     }
     
     // No tool call - just text response
-    chat.AddAssistantMessage(llmResponse.ResponseText, nil, nil)
-    return llmResponse, nil
+    c.AddAssistantMessage(responseText, nil, nil)
+    return nil
 }
 
-func (p *AnthropicProvider) buildMessages(chat *Chat) []map[string]interface{} {
+func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{} {
     messages := []map[string]interface{}{}
     
-    for _, msg := range chat.GetMessages() {
+    for _, msg := range c.GetMessages() {
         switch msg.Role {
         case "user":
             messages = append(messages, map[string]interface{}{
@@ -162,10 +170,10 @@ func (p *AnthropicProvider) buildMessages(chat *Chat) []map[string]interface{} {
             // Add tool use if this message has a tool call
             if msg.ToolCall != nil {
                 content = append(content, map[string]interface{}{
-                    "type":  "tool_use",
-                    "id":    msg.ToolCall.ToolID + "_" + fmt.Sprint(msg.Timestamp.Unix()),
-                    "name":  msg.ToolCall.ToolID,
-                    "input": msg.ToolCall.Parameters,
+                    "type":   "tool_use",
+                    "id": msg.ToolCall.ToolUseID,
+                    "name":   msg.ToolCall.ToolID,
+                    "input":  msg.ToolCall.Parameters,
                 })
             }
             
@@ -184,13 +192,14 @@ func (p *AnthropicProvider) buildMessages(chat *Chat) []map[string]interface{} {
                     "content": []map[string]interface{}{
                         {
                             "type":        "tool_result",
-                            "tool_use_id": msg.ToolResult.ToolID + "_" + fmt.Sprint(msg.Timestamp.Unix()),
+                            "tool_use_id": msg.ToolResult.ToolUseID, 
                             "content":     msg.ToolResult.Content,
                             "is_error":    msg.ToolResult.IsError,
                         },
                     },
                 })
             }
+
         }
     }
     
@@ -200,11 +209,15 @@ func (p *AnthropicProvider) buildMessages(chat *Chat) []map[string]interface{} {
 func (p *AnthropicProvider) buildTools(availableTools map[string]llmprotocol.ToolInfo) []map[string]interface{} {
     tools := []map[string]interface{}{}
     
+
+
     for toolID, toolInfo := range availableTools {
+        formatschema := toolInfo.Schema
+        formatschema["type"] = "object"
         tools = append(tools, map[string]interface{}{
             "name":         toolID,
             "description":  toolInfo.Description,
-            "input_schema": toolInfo.Schema, // Already a map, no unmarshal needed!
+            "input_schema": formatschema,
         })
     }
     
@@ -250,15 +263,19 @@ func (p *AnthropicProvider) sendHTTPRequest(requestBody map[string]interface{}) 
     return response, nil
 }
 
-func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (*llmprotocol.LLMResponse, error) {
+// parseResponse extracts relevant data from Anthropic's response
+// Returns: (responseText, toolCallID, toolName, toolParams, stopReason, error)
+func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (string, string, string, map[string]interface{}, string, error) {
     content, ok := response["content"].([]interface{})
     if !ok || len(content) == 0 {
-        return nil, fmt.Errorf("no content in response")
+        return "", "", "", nil, "", fmt.Errorf("no content in response")
     }
     
-    llmResponse := &llmprotocol.LLMResponse{
-        StopReason: response["stop_reason"].(string),
-    }
+    stopReason := response["stop_reason"].(string)
+    responseText := ""
+    toolCallID := ""
+    toolName := ""
+    var toolParams map[string]interface{}
     
     for _, block := range content {
         blockMap := block.(map[string]interface{})
@@ -266,18 +283,14 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (*llm
         
         switch blockType {
         case "text":
-            llmResponse.ResponseText = blockMap["text"].(string)
+            responseText = blockMap["text"].(string)
             
         case "tool_use":
-            llmResponse.ToolCall = &llmprotocol.ToolCall{
-                ToolCallID: blockMap["id"].(string), // Save the ID!
-                ToolName:   blockMap["name"].(string),
-                Parameters: blockMap["input"].(map[string]interface{}),
-                Reasoning:  "", // Anthropic doesn't return reasoning separately
-            }
-            llmResponse.StopReason = "tool_use"
+            toolCallID = blockMap["id"].(string)
+            toolName = blockMap["name"].(string)
+            toolParams = blockMap["input"].(map[string]interface{})
         }
     }
     
-    return llmResponse, nil
+    return responseText, toolCallID, toolName, toolParams, stopReason, nil
 }

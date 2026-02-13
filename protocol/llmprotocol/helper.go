@@ -4,6 +4,7 @@ package llmprotocol
 import (
     "fmt"
     "github.com/AnthonyL103/GOMCP/agent"
+    "encoding/json"
 )
 
 // GetAgentInstructions builds the system prompt
@@ -17,6 +18,7 @@ type ToolInfo struct {
     ServerID    string                 // Add this!
     Description string
     Schema      map[string]interface{}
+    Handler string
 }
 
 func ExtractTools(ag *agent.Agent) map[string]ToolInfo {
@@ -24,21 +26,19 @@ func ExtractTools(ag *agent.Agent) map[string]ToolInfo {
     
     for serverID, server := range ag.Registry.Servers {
         for _, tool := range server.Tools {
+            
             schemaBytes, _ := json.Marshal(tool.InputSchema)
             var schemaMap map[string]interface{}
             json.Unmarshal(schemaBytes, &schemaMap)
             
             tools[tool.ToolID] = ToolInfo{
-                ServerID:    serverID,  // Store it here!
+                ServerID:    serverID,  
                 Description: tool.Description,
                 Schema:      schemaMap,
+                Handler:     tool.Handler,
             }
         }
     }
     
     return tools
-}
-
-func ExecuteTool(ag *agent.Agent, tc *transport.ToolCall) {
-
 }
