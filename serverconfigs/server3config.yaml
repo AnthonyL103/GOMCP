@@ -1,0 +1,120 @@
+# Microsoft Project Server Configuration
+server_id: "microsoft_project_server"
+description: "Manages construction project tasks, schedules, and dependencies"
+
+# Runtime configuration
+runtime:
+  type: "go"
+  command: "go"
+  args: ['run', 'C:\Users\antho\GoMCP\examples\microsoft_project_server.go']
+  port: 8081
+
+# Tools provided by this server
+tools:
+  - tool_id: "get_all_tasks"
+    description: "Get all tasks in the construction project"
+    handler: "get_all_tasks"
+    input_schema:
+      properties: {}
+
+  - tool_id: "get_task"
+    description: "Get details of a specific task by ID"
+    handler: "get_task"
+    input_schema:
+      properties:
+        task_id:
+          type: "string"
+          description: "The ID of the task to retrieve"
+      required:
+        - task_id
+
+  - tool_id: "create_task"
+    description: "Create a new construction task"
+    handler: "create_task"
+    input_schema:
+      properties:
+        name:
+          type: "string"
+          description: "Task name (e.g., 'Install HVAC System')"
+        duration:
+          type: "string"
+          description: "Task duration (e.g., '3 days', '2 weeks')"
+        assignee:
+          type: "string"
+          description: "Person or contractor assigned to this task"
+        dependencies:
+          type: "array"
+          description: "List of predecessor task IDs that must complete first"
+          items:
+            type: "string"
+      required:
+        - name
+        - duration
+
+  - tool_id: "update_task"
+    description: "Update an existing task's details"
+    handler: "update_task"
+    input_schema:
+      properties:
+        task_id:
+          type: "string"
+          description: "The ID of the task to update"
+        name:
+          type: "string"
+          description: "New task name"
+        duration:
+          type: "string"
+          description: "New duration"
+        assignee:
+          type: "string"
+          description: "New assignee"
+        start:
+          type: "string"
+          description: "Start date in YYYY-MM-DD format"
+        finish:
+          type: "string"
+          description: "Finish date in YYYY-MM-DD format"
+      required:
+        - task_id
+
+  - tool_id: "delete_task"
+    description: "Delete a task from the project"
+    handler: "delete_task"
+    input_schema:
+      properties:
+        task_id:
+          type: "string"
+          description: "The ID of the task to delete"
+      required:
+        - task_id
+
+  - tool_id: "update_progress"
+    description: "Update the completion percentage of a task (0-100%)"
+    handler: "update_progress"
+    input_schema:
+      properties:
+        task_id:
+          type: "string"
+          description: "The ID of the task"
+        progress:
+          type: "number"
+          description: "Completion percentage (0-100)"
+      required:
+        - task_id
+        - progress
+
+  - tool_id: "get_critical_path"
+    description: "Get the critical path - tasks with dependencies or incomplete work"
+    handler: "get_critical_path"
+    input_schema:
+      properties: {}
+
+  - tool_id: "export_to_xml"
+    description: "Export the entire project to Microsoft Project XML format that can be opened in Microsoft Project"
+    handler: "export_to_xml"
+    input_schema:
+      properties:
+        file_path:
+          type: "string"
+          description: "File path where the XML should be saved (default: C:/Users/antho/construction_project.xml)"
+

@@ -72,76 +72,101 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
         return err
     }
     
-    // Handle tool call - multi-step process
-    if stopReason == "tool_use" && toolName != "" {
+    // Handle tool calls - loop for multiple sequential tool uses
+    toolsProcessed := false
+    for stopReason == "tool_use" && toolName != "" {
+        toolsProcessed = true
+        
+        // Save current tool info before it gets overwritten
+        currentToolCallID := toolCallID
+        currentToolName := toolName
+        currentToolParams := toolParams
+        
         // Look up the server that owns this tool
-        toolInfo, exists := availableTools[toolName]
+        toolInfo, exists := availableTools[currentToolName]
         if !exists {
-            return fmt.Errorf("tool %s not found", toolName)
+            return fmt.Errorf("tool %s not found", currentToolName)
         }
         
-        // Step 1: Add the tool call message
-        c.AddAssistantMessage("", &chat.ToolCall{
-            ServerID:   toolInfo.ServerID,
-            ToolID:     toolName,
-            Handler:    toolInfo.Handler,
-            Parameters: toolParams,
-            Reasoning:  "",
-            ToolUseID:  toolCallID,
-        }, nil)
-        
-        // Step 2: Execute the tool
+        // Execute the tool
         toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
             ServerID:   toolInfo.ServerID,
-            ToolID:     toolName,
+            ToolID:     currentToolName,
             Handler:    toolInfo.Handler,
-            Parameters: toolParams,
+            Parameters: currentToolParams,
         })
         
         // Step 3: Send tool result back to LLM
         messages = p.buildMessages(c)
+
+        // Add assistant's tool_use message
+        messages = append(messages, map[string]interface{}{
+            "role": "assistant",
+            "content": []map[string]interface{}{
+                {
+                    "type":  "tool_use",
+                    "id":    currentToolCallID,
+                    "name":  currentToolName,
+                    "input": currentToolParams,
+                },
+            },
+        })
+    
+        // Add user's tool_result message
         messages = append(messages, map[string]interface{}{
             "role": "user",
             "content": []map[string]interface{}{
                 {
                     "type":        "tool_result",
-                    "tool_use_id":    toolCallID,
+                    "tool_use_id": currentToolCallID,
                     "content":     toolResult,
                     "is_error":    isError,
                 },
             },
         })
+    
         
         // Send follow-up request with tool result
         requestBody["messages"] = messages
-        response2, err := p.sendHTTPRequest(requestBody)
+        response, err = p.sendHTTPRequest(requestBody)
         if err != nil {
             return err
         }
         
-        finalResponseText, _, _, _, _, err := p.parseResponse(response2)
+        // Update all variables for next iteration
+        responseText, toolCallID, toolName, toolParams, stopReason, err = p.parseResponse(response)
         if err != nil {
             return err
         }
         
-        // Step 4: Add final assistant message with tool result
+        // Save this tool cycle to chat history using CURRENT tool info
         c.AddAssistantMessage(
-            finalResponseText,
-            nil,
+            responseText,
+            &chat.ToolCall{
+                ServerID:   toolInfo.ServerID,
+                ToolID:     currentToolName,
+                Handler:    toolInfo.Handler,
+                Parameters: currentToolParams,
+                Reasoning:  "",
+                ToolUseID:  currentToolCallID,
+            },
             &chat.ToolResult{
-                ServerID: toolInfo.ServerID,
-                ToolID:   toolName,
-                Content:  toolResult,
-                IsError:  isError,
-                ToolUseID: toolCallID,
+                ServerID:  toolInfo.ServerID,
+                ToolID:    currentToolName,
+                Content:   toolResult,
+                IsError:   isError,
+                ToolUseID: currentToolCallID,
             },
         )
         
-        return nil
+        // Loop continues if stopReason is still "tool_use"
     }
     
-    // No tool call - just text response
-    c.AddAssistantMessage(responseText, nil, nil)
+    // Only save text response if no tools were used
+    if !toolsProcessed {
+        c.AddAssistantMessage(responseText, nil, nil)
+    }
+
     return nil
 }
 
@@ -157,47 +182,63 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
             })
             
         case "assistant":
-            content := []map[string]interface{}{}
-            
-            // Add text if present
-            if msg.Content != "" {
-                content = append(content, map[string]interface{}{
-                    "type": "text",
-                    "text": msg.Content,
-                })
-            }
-            
-            // Add tool use if this message has a tool call
-            if msg.ToolCall != nil {
-                content = append(content, map[string]interface{}{
-                    "type":   "tool_use",
-                    "id": msg.ToolCall.ToolUseID,
-                    "name":   msg.ToolCall.ToolID,
-                    "input":  msg.ToolCall.Parameters,
-                })
-            }
-            
-            // Only add if there's content
-            if len(content) > 0 {
+            // If message has both ToolCall and ToolResult, expand into 3 messages
+            if msg.ToolCall != nil && msg.ToolResult != nil {
+                // 1. Assistant message with tool_use
                 messages = append(messages, map[string]interface{}{
-                    "role":    "assistant",
-                    "content": content,
+                    "role": "assistant",
+                    "content": []map[string]interface{}{
+                        {
+                            "type":  "tool_use",
+                            "id":    msg.ToolCall.ToolUseID,
+                            "name":  msg.ToolCall.ToolID,
+                            "input": msg.ToolCall.Parameters,
+                        },
+                    },
                 })
-            }
-            
-            // If this message has a tool result, add it as user message
-            if msg.ToolResult != nil {
+                
+                // 2. User message with tool_result
                 messages = append(messages, map[string]interface{}{
                     "role": "user",
                     "content": []map[string]interface{}{
                         {
                             "type":        "tool_result",
-                            "tool_use_id": msg.ToolResult.ToolUseID, 
+                            "tool_use_id": msg.ToolResult.ToolUseID,
                             "content":     msg.ToolResult.Content,
                             "is_error":    msg.ToolResult.IsError,
                         },
                     },
                 })
+                
+                // 3. Assistant message with final text response
+                if msg.Content != "" {
+                    messages = append(messages, map[string]interface{}{
+                        "role": "assistant",
+                        "content": []map[string]interface{}{
+                            {
+                                "type": "text",
+                                "text": msg.Content,
+                            },
+                        },
+                    })
+                }
+            } else {
+                // Regular assistant message without complete tool cycle
+                content := []map[string]interface{}{}
+                
+                if msg.Content != "" {
+                    content = append(content, map[string]interface{}{
+                        "type": "text",
+                        "text": msg.Content,
+                    })
+                }
+                
+                if len(content) > 0 {
+                    messages = append(messages, map[string]interface{}{
+                        "role":    "assistant",
+                        "content": content,
+                    })
+                }
             }
 
         }

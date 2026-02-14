@@ -39,9 +39,6 @@ func ValidateToolConfig(toolID, description, handler string, inputSchema JSONSch
 	if description == "" {
 		return "", "", "", JSONSchema{}, fmt.Errorf("description cannot be empty")
 	}
-	if len(inputSchema.Properties) == 0 {
-		return "", "", "", JSONSchema{}, fmt.Errorf("inputSchema must have at least one property")
-	}
 
 	// Validate required fields exist in properties
 	for _, req := range inputSchema.Required {
@@ -63,6 +60,7 @@ func ValidateToolConfig(toolID, description, handler string, inputSchema JSONSch
 		"boolean": true,
 		"array":   true,
 		"object":  true,
+		
 	}
 
 	for name, prop := range inputSchema.Properties {
