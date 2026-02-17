@@ -56,7 +56,7 @@ func createProvider(ag *agent.Agent) (transport.Provider, error) {
 	case "Anthropic":
 		return transport.NewAnthropicProvider(llmConfig), nil
 	case "OpenAI":
-		return nil, fmt.Errorf("Oepn ai not configured yet ")
+		return transport.NewOpenAIProvider(llmConfig), nil
 	default:
 		return nil, fmt.Errorf("unsupported model: %s", llmConfig.Model)
 	}

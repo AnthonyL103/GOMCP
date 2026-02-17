@@ -15,6 +15,9 @@ type Message struct {
     ToolResult *ToolResult `json:"tool_result,omitempty"` // What the tool returned
 }
 
+//no specific object declaration for params as these are stored in chat and past context must be sent 
+//and stored in a specific format for different providers.
+
 type ToolCall struct {
     ServerID   string                 `json:"server_id"`
     ToolID     string                 `json:"tool_id"`     // Matches your tool registry

@@ -18,10 +18,12 @@ type JSONSchema struct {
 }
 
 type PropertySchema struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+    Type        string                      `json:"type"`
+    Description string                      `json:"description,omitempty"`
+    Items       *PropertySchema             `json:"items,omitempty"`       // For arrays
+    Properties  map[string]PropertySchema   `json:"properties,omitempty"`  // For nested objects
+    Required    []string                    `json:"required,omitempty"`    // For nested objects
 }
-
 // ValidateToolConfig validates tool configuration and returns sanitized values
 func ValidateToolConfig(toolID, description, handler string, inputSchema JSONSchema) (string, string, string, JSONSchema, error) {
 	// Strip whitespace
@@ -77,6 +79,9 @@ func ValidateToolConfig(toolID, description, handler string, inputSchema JSONSch
 		trimmedProperties[trimmedKey] = PropertySchema{
 			Type:        strings.TrimSpace(prop.Type),
 			Description: strings.TrimSpace(prop.Description),
+			Items:       prop.Items,
+			Properties:  prop.Properties,
+			Required:    prop.Required,
 		}
 	}
 

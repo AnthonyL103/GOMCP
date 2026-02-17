@@ -42,8 +42,36 @@ type InputSchemaConfig struct {
 
 // PropertyConfig represents a property schema in YAML
 type PropertyConfig struct {
-	Type        string `yaml:"type"`
-	Description string `yaml:"description"`
+	Type        string                     `yaml:"type"`
+	Description string                     `yaml:"description"`
+	Items       *PropertyConfig            `yaml:"items,omitempty"`
+	Properties  map[string]PropertyConfig  `yaml:"properties,omitempty"`
+	Required    []string                   `yaml:"required,omitempty"`
+}
+
+// convertPropertyConfig recursively converts PropertyConfig to PropertySchema
+func convertPropertyConfig(prop PropertyConfig) tool.PropertySchema {
+	schema := tool.PropertySchema{
+		Type:        prop.Type,
+		Description: prop.Description,
+		Required:    prop.Required,
+	}
+	
+	// Recursively convert Items if present (for arrays)
+	if prop.Items != nil {
+		converted := convertPropertyConfig(*prop.Items)
+		schema.Items = &converted
+	}
+	
+	// Recursively convert nested Properties if present (for objects)
+	if len(prop.Properties) > 0 {
+		schema.Properties = make(map[string]tool.PropertySchema)
+		for name, nestedProp := range prop.Properties {
+			schema.Properties[name] = convertPropertyConfig(nestedProp)
+		}
+	}
+	
+	return schema
 }
 
 // validateServerConfig validates the server configuration
@@ -96,10 +124,7 @@ func ParseServerConfig(filePath string) (*server.MCPServer, *server.RuntimeConfi
 
 		props := make(map[string]tool.PropertySchema)
 		for name, prop := range tc.InputSchema.Properties {
-			props[name] = tool.PropertySchema{
-				Type:        prop.Type,
-				Description: prop.Description,
-			}
+			props[name] = convertPropertyConfig(prop)
 		}
 
 		schema := tool.JSONSchema{

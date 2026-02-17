@@ -15,8 +15,8 @@ func main() {
 	http.HandleFunc("/execute/get_forecast", handleGetForecast)
 	
 	// Hardcoded port matching YAML config
-	log.Println("Starting test weather server on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Println("Starting test weather server on port 8081")
+	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
 func handleGetWeather(w http.ResponseWriter, r *http.Request) {
