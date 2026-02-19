@@ -32,6 +32,7 @@ type AgentDetails struct {
 	ToolCount int
 	// ServerTools maps ServerID -> map of ToolName -> Tool
 	ServerTools map[string]map[string]*tool.Tool
+	ServerGeneration bool
 }
 
 type LLMConfig struct {
@@ -47,6 +48,7 @@ type Agent struct {
 	Description string
 	Registry *registry.Registry
 	LLMConfig *LLMConfig
+	ServerGeneration bool
 }
 
 //return list of valid models for the user 
@@ -109,6 +111,7 @@ func NewAgent(
 	description string,
 	registry *registry.Registry,
 	LLMConfig *LLMConfig,
+	serverGeneration bool,
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
 	description = strings.TrimSpace(description)
@@ -132,6 +135,7 @@ func NewAgent(
 		Description: description,
 		Registry:    registry,
 		LLMConfig:   LLMConfig,
+		ServerGeneration: serverGeneration,
 	}
 }
 
@@ -142,6 +146,7 @@ func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
 
 	servers := make(map[string]*server.MCPServer)
 	serverTools := make(map[string]map[string]*tool.Tool)
+	serverGeneration := a.ServerGeneration
 	toolCount := 0
 	
 	for _, server := range a.Registry.Servers {
@@ -160,5 +165,6 @@ func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
 		ServerCount: len(servers),
 		ToolCount:   toolCount,
 		ServerTools: serverTools,
+		ServerGeneration: serverGeneration,
 	}
 }

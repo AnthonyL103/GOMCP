@@ -42,7 +42,7 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
     
     // Extract and format tools
     availableTools := llmprotocol.ExtractTools(ag)
-    formattedTools := p.buildTools(availableTools)
+    formattedTools := p.buildTools(availableTools, ag)
     
     // Convert chat history to OpenAI format
     messages := p.buildMessages(c, agentInstructions)
@@ -246,7 +246,7 @@ func (p *OpenAIProvider) buildMessages(c *chat.Chat, systemMessage string) []map
     return messages
 }
 
-func (p *OpenAIProvider) buildTools(availableTools map[string]llmprotocol.ToolInfo) []map[string]interface{} {
+func (p *OpenAIProvider) buildTools(availableTools map[string]llmprotocol.ToolInfo, ag *agent.Agent) []map[string]interface{} {
     tools := []map[string]interface{}{}
     
     for toolID, toolInfo := range availableTools {
@@ -259,6 +259,112 @@ func (p *OpenAIProvider) buildTools(availableTools map[string]llmprotocol.ToolIn
                 "name":        toolID,
                 "description": toolInfo.Description,
                 "parameters":  formatschema,
+            },
+        })
+    }
+
+    if ag.ServerGeneration {
+        tools = append(tools, map[string]interface{}{
+            "type": "function",
+            "function": map[string]interface{}{
+                "name": "create_server_tool",
+                "description": `Generate and deploy a complete Go-based MCP server with one or more custom tools through automated validation.
+
+WHAT IT DOES:
+- Generates an entire HTTP server in pure Go
+- One server can contain multiple tools
+- Automatically compiles, tests, and deploys
+- Tools are immediately available for use
+
+VALIDATION PROCESS:
+1. Syntax: Go code compiled → compiler errors returned if needed
+2. Testing: Each tool tested with YOUR provided test_params → results returned
+3. Deploy: On success, server runs and tools are registered
+
+KEY POINTS:
+✓ Write pure Go code only
+✓ Provide contextual test_params for each tool (for realistic testing)
+✓ Each tool is self-contained with its own parameters and test data
+✓ Handlers must work with the exact test data you specify
+
+STRUCTURE - tools array with complete tool definitions:
+{
+  "server_id": "csv_processor",
+  "server_description": "Handles CSV parsing and validation",
+  "tools": [
+    {
+      "tool_id": "parse_csv",
+      "description": "Parse CSV file content",
+      "input_schema": {
+        "properties": {
+          "content": {"type": "string", "description": "CSV content"},
+          "delimiter": {"type": "string", "description": "CSV delimiter"}
+        },
+        "required": ["content", "delimiter"]
+      },
+      "handler_code": "var params map[string]interface{}\njson.NewDecoder(r.Body).Decode(&params)\ncontent := params[\"content\"].(string)\n// parse logic...\nresult := map[string]interface{}{\"rows\": parsed}\nw.Header().Set(\"Content-Type\", \"application/json\")\njson.NewEncoder(w).Encode(result)",
+      "test_params": {
+        "content": "name,age\\nAlice,30\\nBob,25",
+        "delimiter": ","
+      }
+    }
+  ]
+}
+
+HANDLER CODE TEMPLATE:
+  var params map[string]interface{}
+  json.NewDecoder(r.Body).Decode(&params)
+  
+  // Extract parameters
+  field1 := params["field_name"].(string)
+  field2 := params["field2"].(float64)
+  
+  // Your business logic here
+  result := map[string]interface{}{
+    "status": "success",
+    "data": processed,
+  }
+  w.Header().Set("Content-Type", "application/json")
+  json.NewEncoder(w).Encode(result)
+
+TESTING:
+- System will call each tool with YOUR test_params
+- Your handler must work correctly with those exact values
+- If tests fail, you see what went wrong - debug and retry
+
+FEEDBACK:
+- Compilation error → Fix Go code → Try again
+- Test failed → See test results with your test_params → Debug → Try again
+- Success → Server deployed and tools ready!`,
+                "parameters": map[string]interface{}{
+                    "type": "object",
+                    "properties": map[string]interface{}{
+                        "server_id": map[string]interface{}{
+                            "type":        "string",
+                            "description": "Unique server identifier (snake_case, e.g., 'csv_parser', 'data_processor'). One server can contain multiple tools.",
+                        },
+                        "server_description": map[string]interface{}{
+                            "type":        "string",
+                            "description": "Description of the server's purpose and what it provides",
+                        },
+                        "tools": map[string]interface{}{
+                            "type":        "array",
+                            "description": "Array of tool objects. Each must have: tool_id, description, input_schema, handler_code, test_params",
+                            "items": map[string]interface{}{
+                                "type": "object",
+                                "properties": map[string]interface{}{
+                                    "tool_id": map[string]interface{}{"type": "string", "description": "Unique tool identifier (snake_case)"},
+                                    "description": map[string]interface{}{"type": "string", "description": "What this tool does"},
+                                    "input_schema": map[string]interface{}{"type": "object", "description": "JSON schema with properties and required fields"},
+                                    "handler_code": map[string]interface{}{"type": "string", "description": "Go handler implementation (complete function body)"},
+                                    "test_params": map[string]interface{}{"type": "object", "description": "Test data for this specific tool - must match input_schema"},
+                                },
+                                "required": []string{"tool_id", "description", "input_schema", "handler_code", "test_params"},
+                            },
+                        },
+                    },
+                    "required": []string{"server_id", "server_description", "tools"},
+                },
             },
         })
     }
