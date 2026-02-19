@@ -10,6 +10,7 @@ import (
     "github.com/AnthonyL103/GOMCP/agent"
     "github.com/AnthonyL103/GOMCP/server"
     "github.com/AnthonyL103/GOMCP/chat"
+    "github.com/AnthonyL103/GOMCP/servergeneration"
 )
 
 func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
@@ -18,6 +19,11 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
     }
     if tc == nil {
         panic("Tool Call does not exist")
+    }
+
+    // Special handling for tool generation (in-process execution)
+    if tc.ToolID == "create_server_tool" {
+        return servergeneration.GenerateServerTool(ag, tc.Parameters)
     }
 
     // Get the server

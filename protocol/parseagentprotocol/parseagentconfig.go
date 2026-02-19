@@ -23,6 +23,7 @@ type AgentDefinition struct {
     Description string        `yaml:"description"`
     LLM         LLMConfigYAML `yaml:"llm"`
     Servers     []string      `yaml:"servers"` // Paths to server YAML files
+    ServerGeneration bool       `yaml:"server_generation"`
 }
 
 // LLMConfigYAML represents LLM settings from YAML
@@ -31,6 +32,11 @@ type LLMConfigYAML struct {
     Model       string  `yaml:"model"`
     Temperature float32 `yaml:"temperature"`
     MaxTokens   int     `yaml:"max_tokens"`
+}
+
+func isBool(val interface{}) bool {
+    _, ok := val.(bool)
+    return ok
 }
 
 func ParseAgentConfig() (*agent.Agent, error) {
@@ -50,6 +56,7 @@ func ParseAgentConfig() (*agent.Agent, error) {
     if len(config.Agents) == 0 {
         return nil, fmt.Errorf("no agents defined in config")
     }
+
 
     agentDef := config.Agents[0]
 
@@ -84,12 +91,19 @@ func ParseAgentConfig() (*agent.Agent, error) {
         }
     }
 
+    if !agentDef.ServerGeneration || !isBool(agentDef.ServerGeneration) {
+        fmt.Printf("Server generation disabled or invalid for agent %s, defaulting to false\n", agentDef.AgentID)
+        agentDef.ServerGeneration = false
+    }
+
+
     // Create agent using your NewAgent constructor
     ag := agent.NewAgent(
         agentDef.AgentID,
         agentDef.Description,
         reg,
         LLMConfig,
+        agentDef.ServerGeneration,
     )
 
     return ag, nil
@@ -120,8 +134,8 @@ func TestConfigParser() {
 
     // print agent summary
     details := ag.GetAgentDetails(ag)
-    fmt.Printf("Agent ID: %s\nDescription: %s\nServerCount: %d\nToolCount: %d\n",
-        details.AgentID, details.Description, details.ServerCount, details.ToolCount)
+    fmt.Printf("Agent ID: %s\nDescription: %s\nServerCount: %d\nToolCount: %d\nServerGeneration: %t\n",
+        details.AgentID, details.Description, details.ServerCount, details.ToolCount, details.ServerGeneration)
 
     // iterate registry servers (map[string]*MCPServer)
     for serverID, server := range ag.Registry.Servers {
