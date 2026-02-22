@@ -26,6 +26,10 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
         return servergeneration.GenerateServerTool(ag, tc.Parameters)
     }
 
+    if tc.ToolID == "delete_server_tool" {
+        return servergeneration.DeleteServerTool(ag, tc.Parameters)
+    }
+
     // Get the server
     srv, exists := ag.Registry.Servers[tc.ServerID]
     if !exists {

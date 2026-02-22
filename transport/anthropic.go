@@ -84,14 +84,68 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
         
         // Look up the server that owns this tool
         toolInfo, exists := availableTools[currentToolName]
-        if !exists && currentToolName != "create_server_tool" {
+        if !exists && currentToolName != "create_server_tool" && currentToolName != "delete_server_tool" {
             return fmt.Errorf("tool %s not found", currentToolName)
         }
 
         if currentToolName == "create_server_tool" && !ag.ServerGeneration {
             return fmt.Errorf("tool %s not available set it in config to enable server generation", currentToolName)
         }
+
+        if currentToolName == "delete_server_tool" && !ag.ServerGeneration {
+            return fmt.Errorf("tool %s not available set it in config to enable server generation", currentToolName)
+        }
         
+        // Validate create_server_tool parameters
+        if currentToolName == "create_server_tool" {
+            validationErr := validateServerGenerationParamsAnthropic(currentToolParams)
+            if validationErr != nil {
+                // Return validation error to LLM
+                toolResult := fmt.Sprintf("ERROR: %v\n\nPLEASE FIX: create_server_tool must generate exactly ONE server with all tools in one request.", validationErr)
+                isError := true
+                
+                // Send validation error back to LLM
+                messages = p.buildMessages(c)
+                messages = append(messages, map[string]interface{}{
+                    "role": "assistant",
+                    "content": []map[string]interface{}{
+                        {
+                            "type":  "tool_use",
+                            "id":    currentToolCallID,
+                            "name":  currentToolName,
+                            "input": currentToolParams,
+                        },
+                    },
+                })
+                messages = append(messages, map[string]interface{}{
+                    "role": "user",
+                    "content": []map[string]interface{}{
+                        {
+                            "type":        "tool_result",
+                            "tool_use_id": currentToolCallID,
+                            "content":     toolResult,
+                            "is_error":    isError,
+                        },
+                    },
+                })
+                
+                // Send follow-up request with validation error
+                requestBody["messages"] = messages
+                response, err = p.sendHTTPRequest(requestBody)
+                if err != nil {
+                    return err
+                }
+                
+                // Get next response
+                responseText, toolCallID, toolName, toolParams, stopReason, err = p.parseResponse(response)
+                if err != nil {
+                    return err
+                }
+                continue
+            }
+        }
+
+
         // Execute the tool
         toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
             ServerID:   toolInfo.ServerID,
@@ -269,9 +323,15 @@ func (p *AnthropicProvider) buildTools(availableTools map[string]llmprotocol.Too
             "name": "create_server_tool",
             "description": `Generate and deploy a complete Go-based MCP server with one or more custom tools through automated validation.
 
+⚠️ CRITICAL CONSTRAINT: ONLY ONE SERVER PER REQUEST
+- If you make multiple create_server_tool calls, ONLY the FIRST will be deployed
+- Any subsequent calls will be rejected
+- Put ALL tools you need in ONE single server request
+- Do NOT attempt to create multiple servers in one user request
+
 WHAT IT DOES:
 - Generates an entire HTTP server in pure Go
-- One server can contain multiple tools
+- One server can contain multiple tools in a single request
 - Automatically compiles, tests, and deploys
 - Tools are immediately available for use
 
@@ -285,6 +345,8 @@ KEY POINTS:
 ✓ Provide contextual test_params for each tool (for realistic testing)
 ✓ Each tool is self-contained with its own parameters and test data
 ✓ Handlers must work with the exact test data you specify
+✓ ONE server generation call = ONE deployed server with all your tools
+✓ If you try to generate a second server in same request, it will be rejected
 
 STRUCTURE - tools array with complete tool definitions:
 {
@@ -366,7 +428,27 @@ FEEDBACK:
             },
         })
     }
+
+    tools = append(tools, map[string]interface{}{
+        "name": "delete_server_tool",
+        "description": `Delete a previously generated server by its server_id.
+INPUT SCHEMA:
+{
+  "server_id": "string" // The unique identifier of the server to delete (e.g., 'csv_processor')
+}`,
+        "input_schema": map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "server_id": map[string]interface{}{
+                    "type":        "string",
+                    "description": "The unique identifier of the server to delete (e.g., 'csv_processor')",
+                },
+            },
+            "required": []string{"server_id"},
+        },
+    })
     
+
     return tools
 }
 
@@ -430,13 +512,59 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (stri
         switch blockType {
         case "text":
             responseText = blockMap["text"].(string)
-            
+
         case "tool_use":
             toolCallID = blockMap["id"].(string)
             toolName = blockMap["name"].(string)
             toolParams = blockMap["input"].(map[string]interface{})
         }
     }
-    
+
     return responseText, toolCallID, toolName, toolParams, stopReason, nil
+}
+
+// validateServerGenerationParams validates that create_server_tool is being called correctly
+// Returns nil if valid, or an error if invalid
+func validateServerGenerationParamsAnthropic(params map[string]interface{}) error {
+    // Check required fields
+
+    serverID, ok := params["server_id"].(string)
+    if !ok || serverID == "" {
+        return fmt.Errorf("server_id is required and must be a string")
+    }
+    
+    // Parse tools array
+    toolsRaw, ok := params["tools"]
+    if !ok {
+        return fmt.Errorf("tools array is required")
+    }
+    
+    toolsArray, ok := toolsRaw.([]interface{})
+    if !ok {
+        return fmt.Errorf("tools must be an array")
+    }
+    
+    // Validate we're not trying to create multiple servers
+    // The tools array should contain tool definitions for ONE server, not multiple servers
+    if len(toolsArray) == 0 {
+        return fmt.Errorf("tools array must contain at least one tool")
+    }
+    
+    for _, tool := range toolsArray {
+        toolMap, ok := tool.(map[string]interface{})
+        if !ok {
+            return fmt.Errorf("each tool must be an object")
+        }
+        if _, ok := toolMap["tool_id"]; !ok {
+            return fmt.Errorf("each tool must have a tool_id")
+        }
+        if _, ok := toolMap["handler_code"]; !ok {
+            return fmt.Errorf("each tool must have handler_code")
+        }
+        if _, ok := toolMap["test_params"]; !ok {
+            return fmt.Errorf("each tool must have test_params for validation")
+        }
+    }
+    
+    return nil
 }

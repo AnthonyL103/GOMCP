@@ -270,9 +270,15 @@ func (p *OpenAIProvider) buildTools(availableTools map[string]llmprotocol.ToolIn
                 "name": "create_server_tool",
                 "description": `Generate and deploy a complete Go-based MCP server with one or more custom tools through automated validation.
 
+⚠️ CRITICAL CONSTRAINT: ONLY ONE SERVER PER REQUEST
+- If you make multiple create_server_tool calls, ONLY the FIRST will be deployed
+- Any subsequent calls will be rejected
+- Put ALL tools you need in ONE single server request
+- Do NOT attempt to create multiple servers in one user request
+
 WHAT IT DOES:
 - Generates an entire HTTP server in pure Go
-- One server can contain multiple tools
+- One server can contain multiple tools in a single request
 - Automatically compiles, tests, and deploys
 - Tools are immediately available for use
 
@@ -286,6 +292,8 @@ KEY POINTS:
 ✓ Provide contextual test_params for each tool (for realistic testing)
 ✓ Each tool is self-contained with its own parameters and test data
 ✓ Handlers must work with the exact test data you specify
+✓ ONE server generation call = ONE deployed server with all your tools
+✓ If you try to generate a second server in same request, it will be rejected
 
 STRUCTURE - tools array with complete tool definitions:
 {

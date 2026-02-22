@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -43,19 +44,38 @@ type GeneratedTool struct {
 
 // ServerManager manages all generated servers
 type ServerManager struct {
-	servers  map[string]*GeneratedServer
-	mu       sync.RWMutex
-	nextPort int
+	servers                  map[string]*GeneratedServer
+	mu                       sync.RWMutex
+	nextPort                 int
+	serverGeneratedThisCall  bool // Track if a server was already generated in this LLM call
 }
 
 var manager = &ServerManager{
-	servers:  make(map[string]*GeneratedServer),
-	nextPort: 9000, // Start dynamic servers at port 9000
+	servers:                 make(map[string]*GeneratedServer),
+	nextPort:                9000, // Start dynamic servers at port 9000
+	serverGeneratedThisCall: false,
 }
 
 // GenerateServerTool is the main entry point called by the LLM
 // Returns (result_message, is_error)
 func GenerateServerTool(ag *agent.Agent, params map[string]interface{}) (string, bool) {
+	// Check if a server was already generated in this request
+	manager.mu.Lock()
+	if manager.serverGeneratedThisCall {
+		manager.mu.Unlock()
+		return "Error: A server has already been generated and deployed in this request. Only ONE server per request is allowed. The first server was deployed and this request is rejected.", true
+	}
+	manager.mu.Unlock()
+
+	// Safety check: limit total servers to prevent runaway generation
+	manager.mu.RLock()
+	serverCount := len(manager.servers)
+	manager.mu.RUnlock()
+	
+	if serverCount >= 5 {
+		return "Error: Maximum 5 servers allowed. Please stop some servers before creating new ones.", true
+	}
+
 	// Parse parameters
 	serverID, _ := params["server_id"].(string)
 	serverDescription, _ := params["server_description"].(string)
@@ -90,21 +110,24 @@ func GenerateServerTool(ag *agent.Agent, params map[string]interface{}) (string,
 		return fmt.Sprintf("Failed to generate server code: %v", err), true
 	}
 
+	fmt.Printf("Generated server code at %s\n", filePath)
+
 	// Step 2: Validate syntax
-	binaryPath := strings.TrimSuffix(filePath, ".go")
+	binaryPath := resolveBinaryPath(strings.TrimSuffix(filePath, ".go"))
 	syntaxResult, syntaxErr := ValidateSyntax(filePath, binaryPath)
 	if syntaxErr != nil {
 		return fmt.Sprintf("SYNTAX VALIDATION FAILED:\n%s\n\nPlease fix the Go code and try again.", syntaxResult), true
 	}
 
-	// Step 3: Start the server for testing
+	fmt.Printf("Syntax validation passed, compiled binary at %s\n", binaryPath)	
+
+	// Step 3: Start the server for testing, cmd is the test server process that we will kill after testing
 	cmd, err := startServerProcess(binaryPath, port)
 	if err != nil {
 		return fmt.Sprintf("Failed to start server for testing: %v", err), true
 	}
 
-	// Wait for server to be ready
-	time.Sleep(500 * time.Millisecond)
+	fmt.Printf("Started server for testing on port %d\n", port)
 
 	// Step 4: Test all tools with their specific test_params
 	testResult, testErr := TestTools(port, generatedTools)
@@ -115,8 +138,9 @@ func GenerateServerTool(ag *agent.Agent, params map[string]interface{}) (string,
 	}
 
 	if testErr != nil {
-		// Clean up binary
-		os.Remove(binaryPath)
+		// Clean up binary and source file
+		os.Remove(binaryPath + ".exe")
+		os.Remove(filePath)
 		return fmt.Sprintf("TOOL TEST FAILED:\n%s\n\nPlease fix the handler logic and try again.", testResult), true
 	}
 
@@ -127,10 +151,17 @@ func GenerateServerTool(ag *agent.Agent, params map[string]interface{}) (string,
 		toolObjs = append(toolObjs, toolObj)
 	}
 
+	fmt.Printf("All tools passed testing:\n%s\nRegistering server in the agent registry...\n", testResult)
+
+	// Reuse the same port/binary for permanent deployment
 	err = AddToRegistry(ag.Registry, serverID, serverDescription, port, toolObjs)
 	if err != nil {
 		return fmt.Sprintf("Failed to register server: %v", err), true
 	}
+
+	fmt.Printf("Server '%s' registered successfully with %d tools\n", serverID, len(toolObjs))
+
+	fmt.Printf("current registry state: %+v\n", ag.Registry.Servers)
 
 	fmt.Printf("Generated server binary perm: %s, Port: %d\n", binaryPath, port)
 	// Step 6: Start the server permanently
@@ -162,6 +193,11 @@ func GenerateServerTool(ag *agent.Agent, params map[string]interface{}) (string,
 		toolNames[i] = t.ToolID
 	}
 
+	// Mark that a server has been generated in this request
+	manager.mu.Lock()
+	manager.serverGeneratedThisCall = true
+	manager.mu.Unlock()
+
 	return fmt.Sprintf("SUCCESS! Server '%s' created and deployed.\n\n"+
 		"- Tools: %s\n"+
 		"- Port: %d\n"+
@@ -187,6 +223,25 @@ func ValidateSyntax(sourcePath, binaryPath string) (string, error) {
 // TestTools tests all tools with their provided test_params
 // Returns (result_description, error)
 func TestTools(port int, tools []GeneratedTool) (string, error) {
+	// Wait for server to be ready with retries
+	healthURL := fmt.Sprintf("http://localhost:%d/execute/", port)
+	maxRetries := 10
+	var lastErr error
+	
+	for i := 0; i < maxRetries; i++ {
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			resp.Body.Close()
+			break // Server is ready
+		}
+		lastErr = err
+		time.Sleep(200 * time.Millisecond)
+	}
+	
+	if lastErr != nil && maxRetries > 0 {
+		return fmt.Sprintf("Server failed to start after %d retries: %v", maxRetries, lastErr), fmt.Errorf("server startup timeout")
+	}
+
 	var testResults strings.Builder
 	testResults.WriteString("TESTING TOOLS:\n")
 
@@ -200,10 +255,19 @@ func TestTools(port int, tools []GeneratedTool) (string, error) {
 			return fmt.Sprintf("Failed to marshal test payload for %s: %v", tool.ToolID, err), fmt.Errorf("marshal failed")
 		}
 
-		// Make test request
-		resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
-		if err != nil {
-			return fmt.Sprintf("Tool '%s': Failed to connect to endpoint: %v", tool.ToolID, err), fmt.Errorf("connection failed")
+		// Make test request with retries
+		var resp *http.Response
+		var lastConnErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			resp, lastConnErr = http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+			if lastConnErr == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		
+		if lastConnErr != nil {
+			return fmt.Sprintf("Tool '%s': Failed to connect to endpoint: %v", tool.ToolID, lastConnErr), fmt.Errorf("connection failed")
 		}
 		defer resp.Body.Close()
 
@@ -250,33 +314,60 @@ func AddToRegistry(reg *registry.Registry, serverID, description string, port in
 }
 
 // DeleteFromRegistry removes a generated server from the registry
-func DeleteFromRegistry(reg *registry.Registry, serverID string) error {
+func DeleteServerTool(ag *agent.Agent, params map[string]interface{}) (string, bool) {
+	//unlock registry to delete server, defer re-lock until end of function
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 
-	// Stop the server process if running
-	if genServer, exists := manager.servers[serverID]; exists {
-		if genServer.Running && genServer.Process != nil {
-			genServer.Process.Process.Kill()
-		}
-		delete(manager.servers, serverID)
+	serverID, ok := params["server_id"].(string)
+	if !ok {
+		return "delete_server_tool requires 'server_id' parameter", true
 	}
 
-	return reg.RemoveServer(serverID)
+	genServer, exists := manager.servers[serverID]
+	if !exists {
+		return fmt.Sprintf("server '%s' not found", serverID), true
+	}
+
+	os.Remove(genServer.FilePath)
+	os.Remove(genServer.BinaryPath + ".exe")
+	if genServer.Process != nil && genServer.Process.Process != nil {
+		genServer.Process.Process.Kill()
+	}
+	// Remove from manager
+	delete(manager.servers, serverID)
+
+	return fmt.Sprintf("Server '%s' deleted successfully", serverID), false
 }
 
 // startServerProcess starts a compiled server binary
 func startServerProcess(binaryPath string, port int) (*exec.Cmd, error) {
-	cmd := exec.Command(binaryPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	actualPath := resolveBinaryPath(binaryPath)
+	if _, err := os.Stat(actualPath); err != nil {
+		return nil, fmt.Errorf("file not found at %s: %v", actualPath, err)
+	}
+
+	cmd := exec.Command(actualPath)
+	
+	// Don't redirect stdout/stderr to parent - let server run independently
+	// but still capture for debugging if needed
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start server: %v", err)
 	}
 	
 	log.Printf("Started generated server on port %d (PID: %d)", port, cmd.Process.Pid)
 	return cmd, nil
+}
+
+// resolveBinaryPath ensures the correct executable path for the current OS.
+func resolveBinaryPath(basePath string) string {
+	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(basePath), ".exe") {
+		return basePath + ".exe"
+	}
+	return basePath
 }
 
 // generateServerCode creates the Go source file for a new server
@@ -373,6 +464,16 @@ func (sm *ServerManager) allocatePort() int {
 	port := sm.nextPort
 	sm.nextPort++
 	return port
+}
+
+// deallocatePort marks a port as available for reuse
+func (sm *ServerManager) deallocatePort(port int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	// Simply decrement nextPort if this was the last allocated port
+	if port == sm.nextPort-1 {
+		sm.nextPort--
+	}
 }
 
 // toPascalCase converts snake_case to PascalCase

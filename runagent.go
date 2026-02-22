@@ -113,6 +113,7 @@ func runagent() {
 		if userMessage == "" {
 			continue
 		}
+
 		
 		// Exit commands
 		if userMessage == "exit" || userMessage == "quit" {
