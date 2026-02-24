@@ -105,7 +105,14 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
             // Look up the server that owns this tool
             toolInfo, exists := availableTools[currentToolName]
             if !exists {
-                return fmt.Errorf("tool %s not found", currentToolName)
+                if !isServerGenerationToolOpenAI(currentToolName) {
+                    return fmt.Errorf("tool %s not found", currentToolName)
+                }
+                toolInfo = llmprotocol.ToolInfo{ServerID: "server_generation", Handler: currentToolName}
+            }
+
+            if isServerGenerationToolOpenAI(currentToolName) && !ag.ServerGeneration {
+                return fmt.Errorf("tool %s not available; enable server generation in config", currentToolName)
             }
             
             // Execute the tool
@@ -267,107 +274,25 @@ func (p *OpenAIProvider) buildTools(availableTools map[string]llmprotocol.ToolIn
         tools = append(tools, map[string]interface{}{
             "type": "function",
             "function": map[string]interface{}{
-                "name": "create_server_tool",
-                "description": `Generate and deploy a complete Go-based MCP server with one or more custom tools through automated validation.
-
-⚠️ CRITICAL CONSTRAINT: ONLY ONE SERVER PER REQUEST
-- If you make multiple create_server_tool calls, ONLY the FIRST will be deployed
-- Any subsequent calls will be rejected
-- Put ALL tools you need in ONE single server request
-- Do NOT attempt to create multiple servers in one user request
-
-WHAT IT DOES:
-- Generates an entire HTTP server in pure Go
-- One server can contain multiple tools in a single request
-- Automatically compiles, tests, and deploys
-- Tools are immediately available for use
-
-VALIDATION PROCESS:
-1. Syntax: Go code compiled → compiler errors returned if needed
-2. Testing: Each tool tested with YOUR provided test_params → results returned
-3. Deploy: On success, server runs and tools are registered
-
-KEY POINTS:
-✓ Write pure Go code only
-✓ Provide contextual test_params for each tool (for realistic testing)
-✓ Each tool is self-contained with its own parameters and test data
-✓ Handlers must work with the exact test data you specify
-✓ ONE server generation call = ONE deployed server with all your tools
-✓ If you try to generate a second server in same request, it will be rejected
-
-STRUCTURE - tools array with complete tool definitions:
-{
-  "server_id": "csv_processor",
-  "server_description": "Handles CSV parsing and validation",
-  "tools": [
-    {
-      "tool_id": "parse_csv",
-      "description": "Parse CSV file content",
-      "input_schema": {
-        "properties": {
-          "content": {"type": "string", "description": "CSV content"},
-          "delimiter": {"type": "string", "description": "CSV delimiter"}
-        },
-        "required": ["content", "delimiter"]
-      },
-      "handler_code": "var params map[string]interface{}\njson.NewDecoder(r.Body).Decode(&params)\ncontent := params[\"content\"].(string)\n// parse logic...\nresult := map[string]interface{}{\"rows\": parsed}\nw.Header().Set(\"Content-Type\", \"application/json\")\njson.NewEncoder(w).Encode(result)",
-      "test_params": {
-        "content": "name,age\\nAlice,30\\nBob,25",
-        "delimiter": ","
-      }
-    }
-  ]
-}
-
-HANDLER CODE TEMPLATE:
-  var params map[string]interface{}
-  json.NewDecoder(r.Body).Decode(&params)
-  
-  // Extract parameters
-  field1 := params["field_name"].(string)
-  field2 := params["field2"].(float64)
-  
-  // Your business logic here
-  result := map[string]interface{}{
-    "status": "success",
-    "data": processed,
-  }
-  w.Header().Set("Content-Type", "application/json")
-  json.NewEncoder(w).Encode(result)
-
-TESTING:
-- System will call each tool with YOUR test_params
-- Your handler must work correctly with those exact values
-- If tests fail, you see what went wrong - debug and retry
-
-FEEDBACK:
-- Compilation error → Fix Go code → Try again
-- Test failed → See test results with your test_params → Debug → Try again
-- Success → Server deployed and tools ready!`,
+                "name": "generate_server_code",
+                "description": "Generate and validate Go server code. Returns a process_id for subsequent steps.",
                 "parameters": map[string]interface{}{
                     "type": "object",
                     "properties": map[string]interface{}{
-                        "server_id": map[string]interface{}{
-                            "type":        "string",
-                            "description": "Unique server identifier (snake_case, e.g., 'csv_parser', 'data_processor'). One server can contain multiple tools.",
-                        },
-                        "server_description": map[string]interface{}{
-                            "type":        "string",
-                            "description": "Description of the server's purpose and what it provides",
-                        },
+                        "server_id": map[string]interface{}{"type": "string", "description": "Unique server identifier (snake_case)"},
+                        "server_description": map[string]interface{}{"type": "string", "description": "Description of the server's purpose"},
                         "tools": map[string]interface{}{
-                            "type":        "array",
-                            "description": "Array of tool objects. Each must have: tool_id, description, input_schema, handler_code, test_params",
+                            "type": "array",
+                            "description": "Array of tool objects. Each must have: tool_id, description, input_schema, handler_code",
                             "items": map[string]interface{}{
                                 "type": "object",
                                 "properties": map[string]interface{}{
                                     "tool_id": map[string]interface{}{"type": "string", "description": "Unique tool identifier (snake_case)"},
                                     "description": map[string]interface{}{"type": "string", "description": "What this tool does"},
                                     "input_schema": map[string]interface{}{"type": "object", "description": "JSON schema with properties and required fields"},
-                                    "handler_code": map[string]interface{}{"type": "string", "description": "Go handler implementation (complete function body)"},
-                                    "test_params": map[string]interface{}{"type": "object", "description": "Test data for this specific tool - must match input_schema"},
+                                    "handler_code": map[string]interface{}{"type": "string", "description": "Go handler implementation (function body)"},
                                 },
-                                "required": []string{"tool_id", "description", "input_schema", "handler_code", "test_params"},
+                                "required": []string{"tool_id", "description", "input_schema", "handler_code"},
                             },
                         },
                     },
@@ -375,7 +300,82 @@ FEEDBACK:
                 },
             },
         })
+
+        tools = append(tools, map[string]interface{}{
+            "type": "function",
+            "function": map[string]interface{}{
+                "name": "deploy_and_test_tools",
+                "description": "Start the generated server and run tool tests using provided test_params. Cleans up on failure.",
+                "parameters": map[string]interface{}{
+                    "type": "object",
+                    "properties": map[string]interface{}{
+                        "process_id": map[string]interface{}{"type": "string", "description": "Process ID from generate_server_code"},
+                        "tool_tests": map[string]interface{}{
+                            "type": "array",
+                            "description": "Array of test inputs for each tool",
+                            "items": map[string]interface{}{
+                                "type": "object",
+                                "properties": map[string]interface{}{
+                                    "tool_id": map[string]interface{}{"type": "string", "description": "Tool ID to test"},
+                                    "test_params": map[string]interface{}{"type": "object", "description": "Test params for the tool"},
+                                },
+                                "required": []string{"tool_id", "test_params"},
+                            },
+                        },
+                    },
+                    "required": []string{"process_id", "tool_tests"},
+                },
+            },
+        })
+
+        tools = append(tools, map[string]interface{}{
+            "type": "function",
+            "function": map[string]interface{}{
+                "name": "deploy_and_register_server",
+                "description": "Register the tested server and start it for use.",
+                "parameters": map[string]interface{}{
+                    "type": "object",
+                    "properties": map[string]interface{}{
+                        "process_id": map[string]interface{}{"type": "string", "description": "Process ID from previous step"},
+                    },
+                    "required": []string{"process_id"},
+                },
+            },
+        })
+
+        tools = append(tools, map[string]interface{}{
+            "type": "function",
+            "function": map[string]interface{}{
+                "name": "cleanup_server_generation",
+                "description": "Remove temporary server generation artifacts for a process.",
+                "parameters": map[string]interface{}{
+                    "type": "object",
+                    "properties": map[string]interface{}{
+                        "process_id": map[string]interface{}{"type": "string", "description": "Process ID to clean up"},
+                    },
+                    "required": []string{"process_id"},
+                },
+            },
+        })
     }
+
+    tools = append(tools, map[string]interface{}{
+        "type": "function",
+        "function": map[string]interface{}{
+            "name": "delete_server_tool",
+            "description": "Delete a previously generated server by server_id.",
+            "parameters": map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "server_id": map[string]interface{}{
+                        "type":        "string",
+                        "description": "The unique identifier of the server to delete (e.g., 'csv_processor')",
+                    },
+                },
+                "required": []string{"server_id"},
+            },
+        },
+    })
     
     return tools
 }
@@ -461,4 +461,13 @@ func (p *OpenAIProvider) parseResponse(response map[string]interface{}) (string,
 func (p *OpenAIProvider) jsonString(data map[string]interface{}) string {
     bytes, _ := json.Marshal(data)
     return string(bytes)
+}
+
+func isServerGenerationToolOpenAI(name string) bool {
+    switch name {
+    case "generate_server_code", "deploy_and_test_tools", "deploy_and_register_server", "cleanup_server_generation", "delete_server_tool":
+        return true
+    default:
+        return false
+    }
 }

@@ -22,11 +22,23 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
     }
 
     // Special handling for tool generation (in-process execution)
-    if tc.ToolID == "create_server_tool" {
-        return servergeneration.GenerateServerTool(ag, tc.Parameters)
+    if tc.ToolID == servergeneration.ToolGenerateServerCode {
+        return servergeneration.GenerateServerCodeTool(ag, tc.Parameters)
     }
 
-    if tc.ToolID == "delete_server_tool" {
+    if tc.ToolID == servergeneration.ToolDeployAndTestTools {
+        return servergeneration.DeployAndTestToolsTool(ag, tc.Parameters)
+    }
+
+    if tc.ToolID == servergeneration.ToolDeployAndRegister {
+        return servergeneration.DeployAndRegisterServerTool(ag, tc.Parameters)
+    }
+
+    if tc.ToolID == servergeneration.ToolCleanupServerGeneration {
+        return servergeneration.CleanupServerGenerationTool(ag, tc.Parameters)
+    }
+
+    if tc.ToolID == servergeneration.ToolDeleteServer {
         return servergeneration.DeleteServerTool(ag, tc.Parameters)
     }
 

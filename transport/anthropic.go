@@ -84,65 +84,15 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
         
         // Look up the server that owns this tool
         toolInfo, exists := availableTools[currentToolName]
-        if !exists && currentToolName != "create_server_tool" && currentToolName != "delete_server_tool" {
-            return fmt.Errorf("tool %s not found", currentToolName)
-        }
-
-        if currentToolName == "create_server_tool" && !ag.ServerGeneration {
-            return fmt.Errorf("tool %s not available set it in config to enable server generation", currentToolName)
-        }
-
-        if currentToolName == "delete_server_tool" && !ag.ServerGeneration {
-            return fmt.Errorf("tool %s not available set it in config to enable server generation", currentToolName)
-        }
-        
-        // Validate create_server_tool parameters
-        if currentToolName == "create_server_tool" {
-            validationErr := validateServerGenerationParamsAnthropic(currentToolParams)
-            if validationErr != nil {
-                // Return validation error to LLM
-                toolResult := fmt.Sprintf("ERROR: %v\n\nPLEASE FIX: create_server_tool must generate exactly ONE server with all tools in one request.", validationErr)
-                isError := true
-                
-                // Send validation error back to LLM
-                messages = p.buildMessages(c)
-                messages = append(messages, map[string]interface{}{
-                    "role": "assistant",
-                    "content": []map[string]interface{}{
-                        {
-                            "type":  "tool_use",
-                            "id":    currentToolCallID,
-                            "name":  currentToolName,
-                            "input": currentToolParams,
-                        },
-                    },
-                })
-                messages = append(messages, map[string]interface{}{
-                    "role": "user",
-                    "content": []map[string]interface{}{
-                        {
-                            "type":        "tool_result",
-                            "tool_use_id": currentToolCallID,
-                            "content":     toolResult,
-                            "is_error":    isError,
-                        },
-                    },
-                })
-                
-                // Send follow-up request with validation error
-                requestBody["messages"] = messages
-                response, err = p.sendHTTPRequest(requestBody)
-                if err != nil {
-                    return err
-                }
-                
-                // Get next response
-                responseText, toolCallID, toolName, toolParams, stopReason, err = p.parseResponse(response)
-                if err != nil {
-                    return err
-                }
-                continue
+        if !exists {
+            if !isServerGenerationToolAnthropic(currentToolName) {
+                return fmt.Errorf("tool %s not found", currentToolName)
             }
+            toolInfo = llmprotocol.ToolInfo{ServerID: "server_generation", Handler: currentToolName}
+        }
+
+        if isServerGenerationToolAnthropic(currentToolName) && !ag.ServerGeneration {
+            return fmt.Errorf("tool %s not available; enable server generation in config", currentToolName)
         }
 
 
@@ -320,122 +270,84 @@ func (p *AnthropicProvider) buildTools(availableTools map[string]llmprotocol.Too
 
     if ag.ServerGeneration {
         tools = append(tools, map[string]interface{}{
-            "name": "create_server_tool",
-            "description": `Generate and deploy a complete Go-based MCP server with one or more custom tools through automated validation.
-
-⚠️ CRITICAL CONSTRAINT: ONLY ONE SERVER PER REQUEST
-- If you make multiple create_server_tool calls, ONLY the FIRST will be deployed
-- Any subsequent calls will be rejected
-- Put ALL tools you need in ONE single server request
-- Do NOT attempt to create multiple servers in one user request
-
-WHAT IT DOES:
-- Generates an entire HTTP server in pure Go
-- One server can contain multiple tools in a single request
-- Automatically compiles, tests, and deploys
-- Tools are immediately available for use
-
-VALIDATION PROCESS:
-1. Syntax: Go code compiled → compiler errors returned if needed
-2. Testing: Each tool tested with YOUR provided test_params → results returned
-3. Deploy: On success, server runs and tools are registered
-
-KEY POINTS:
-✓ Write pure Go code only
-✓ Provide contextual test_params for each tool (for realistic testing)
-✓ Each tool is self-contained with its own parameters and test data
-✓ Handlers must work with the exact test data you specify
-✓ ONE server generation call = ONE deployed server with all your tools
-✓ If you try to generate a second server in same request, it will be rejected
-
-STRUCTURE - tools array with complete tool definitions:
-{
-  "server_id": "csv_processor",
-  "server_description": "Handles CSV parsing and validation",
-  "tools": [
-    {
-      "tool_id": "parse_csv",
-      "description": "Parse CSV file content",
-      "input_schema": {
-        "properties": {
-          "content": {"type": "string", "description": "CSV content"},
-          "delimiter": {"type": "string", "description": "CSV delimiter"}
-        },
-        "required": ["content", "delimiter"]
-      },
-      "handler_code": "var params map[string]interface{}\njson.NewDecoder(r.Body).Decode(&params)\ncontent := params[\"content\"].(string)\n// parse logic...\nresult := map[string]interface{}{\"rows\": parsed}\nw.Header().Set(\"Content-Type\", \"application/json\")\njson.NewEncoder(w).Encode(result)",
-      "test_params": {
-        "content": "name,age\\nAlice,30\\nBob,25",
-        "delimiter": ","
-      }
-    }
-  ]
-}
-
-HANDLER CODE TEMPLATE:
-  var params map[string]interface{}
-  json.NewDecoder(r.Body).Decode(&params)
-  
-  // Extract parameters
-  field1 := params["field_name"].(string)
-  field2 := params["field2"].(float64)
-  
-  // Your business logic here
-  result := map[string]interface{}{
-    "status": "success",
-    "data": processed,
-  }
-  w.Header().Set("Content-Type", "application/json")
-  json.NewEncoder(w).Encode(result)
-
-TESTING:
-- System will call each tool with YOUR test_params
-- Your handler must work correctly with those exact values
-- If tests fail, you see what went wrong - debug and retry
-
-FEEDBACK:
-- Compilation error → Fix Go code → Try again
-- Test failed → See test results with your test_params → Debug → Try again
-- Success → Server deployed and tools ready!`,
+            "name": "generate_server_code",
+            "description": "Generate and validate Go server code. Returns a process_id used for subsequent steps.",
             "input_schema": map[string]interface{}{
                 "type": "object",
                 "properties": map[string]interface{}{
-                    "server_id": map[string]interface{}{
-                        "type":        "string",
-                        "description": "Unique server identifier (snake_case, e.g., 'csv_processor', 'data_analyzer'). One server can contain multiple tools.",
-                    },
-                    "server_description": map[string]interface{}{
-                        "type":        "string",
-                        "description": "Description of the server's purpose and what it provides",
-                    },
+                    "server_id": map[string]interface{}{"type": "string", "description": "Unique server identifier (snake_case)"},
+                    "server_description": map[string]interface{}{"type": "string", "description": "Description of the server's purpose"},
                     "tools": map[string]interface{}{
-                        "type":        "array",
-                        "description": "Array of tool objects. Each must have: tool_id, description, input_schema, handler_code, test_params",
+                        "type": "array",
+                        "description": "Array of tool objects. Each must have: tool_id, description, input_schema, handler_code",
                         "items": map[string]interface{}{
                             "type": "object",
                             "properties": map[string]interface{}{
                                 "tool_id": map[string]interface{}{"type": "string", "description": "Unique tool identifier (snake_case)"},
                                 "description": map[string]interface{}{"type": "string", "description": "What this tool does"},
                                 "input_schema": map[string]interface{}{"type": "object", "description": "JSON schema with properties and required fields"},
-                                "handler_code": map[string]interface{}{"type": "string", "description": "Go handler implementation (complete function body)"},
-                                "test_params": map[string]interface{}{"type": "object", "description": "Test data for this specific tool - must match input_schema"},
+                                "handler_code": map[string]interface{}{"type": "string", "description": "Go handler implementation (function body)"},
                             },
-                            "required": []string{"tool_id", "description", "input_schema", "handler_code", "test_params"},
+                            "required": []string{"tool_id", "description", "input_schema", "handler_code"},
                         },
                     },
                 },
                 "required": []string{"server_id", "server_description", "tools"},
             },
         })
+
+        tools = append(tools, map[string]interface{}{
+            "name": "deploy_and_test_tools",
+            "description": "Start the generated server and run tool tests using provided test_params. Cleans up on failure.",
+            "input_schema": map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "process_id": map[string]interface{}{"type": "string", "description": "Process ID from generate_server_code"},
+                    "tool_tests": map[string]interface{}{
+                        "type": "array",
+                        "description": "Array of test inputs for each tool",
+                        "items": map[string]interface{}{
+                            "type": "object",
+                            "properties": map[string]interface{}{
+                                "tool_id": map[string]interface{}{"type": "string", "description": "Tool ID to test"},
+                                "test_params": map[string]interface{}{"type": "object", "description": "Test params for the tool"},
+                            },
+                            "required": []string{"tool_id", "test_params"},
+                        },
+                    },
+                },
+                "required": []string{"process_id", "tool_tests"},
+            },
+        })
+
+        tools = append(tools, map[string]interface{}{
+            "name": "deploy_and_register_server",
+            "description": "Register the tested server and start it for use.",
+            "input_schema": map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "process_id": map[string]interface{}{"type": "string", "description": "Process ID from previous step"},
+                },
+                "required": []string{"process_id"},
+            },
+        })
+
+        tools = append(tools, map[string]interface{}{
+            "name": "cleanup_server_generation",
+            "description": "Remove temporary server generation artifacts for a process.",
+            "input_schema": map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "process_id": map[string]interface{}{"type": "string", "description": "Process ID to clean up"},
+                },
+                "required": []string{"process_id"},
+            },
+        })
     }
 
     tools = append(tools, map[string]interface{}{
         "name": "delete_server_tool",
-        "description": `Delete a previously generated server by its server_id.
-INPUT SCHEMA:
-{
-  "server_id": "string" // The unique identifier of the server to delete (e.g., 'csv_processor')
-}`,
+        "description": "Delete a previously generated server by server_id.",
         "input_schema": map[string]interface{}{
             "type": "object",
             "properties": map[string]interface{}{
@@ -523,48 +435,12 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (stri
     return responseText, toolCallID, toolName, toolParams, stopReason, nil
 }
 
-// validateServerGenerationParams validates that create_server_tool is being called correctly
-// Returns nil if valid, or an error if invalid
-func validateServerGenerationParamsAnthropic(params map[string]interface{}) error {
-    // Check required fields
-
-    serverID, ok := params["server_id"].(string)
-    if !ok || serverID == "" {
-        return fmt.Errorf("server_id is required and must be a string")
+// isServerGenerationTool returns true for tools handled in-process.
+func isServerGenerationToolAnthropic(name string) bool {
+    switch name {
+    case "generate_server_code", "deploy_and_test_tools", "deploy_and_register_server", "cleanup_server_generation", "delete_server_tool":
+        return true
+    default:
+        return false
     }
-    
-    // Parse tools array
-    toolsRaw, ok := params["tools"]
-    if !ok {
-        return fmt.Errorf("tools array is required")
-    }
-    
-    toolsArray, ok := toolsRaw.([]interface{})
-    if !ok {
-        return fmt.Errorf("tools must be an array")
-    }
-    
-    // Validate we're not trying to create multiple servers
-    // The tools array should contain tool definitions for ONE server, not multiple servers
-    if len(toolsArray) == 0 {
-        return fmt.Errorf("tools array must contain at least one tool")
-    }
-    
-    for _, tool := range toolsArray {
-        toolMap, ok := tool.(map[string]interface{})
-        if !ok {
-            return fmt.Errorf("each tool must be an object")
-        }
-        if _, ok := toolMap["tool_id"]; !ok {
-            return fmt.Errorf("each tool must have a tool_id")
-        }
-        if _, ok := toolMap["handler_code"]; !ok {
-            return fmt.Errorf("each tool must have handler_code")
-        }
-        if _, ok := toolMap["test_params"]; !ok {
-            return fmt.Errorf("each tool must have test_params for validation")
-        }
-    }
-    
-    return nil
 }
