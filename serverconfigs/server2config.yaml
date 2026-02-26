@@ -7,7 +7,7 @@ runtime:
   type: "go"  # "python", "node", "go", "ruby", etc.
   command: "go"
   args: ['C:\Users\antho\GoMCP\examples\schedule_server.go']
-  port: 8080  # Port this server listens on
+  port: 8081  # Port this server listens on
 
 # Tools provided by this server
 tools:

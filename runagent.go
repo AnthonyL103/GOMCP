@@ -95,25 +95,38 @@ func runagent() {
 	log.Printf("Using provider: %s", provider.GetProviderName())
 	
 	// Interactive loop
-	log.Println("Agent ready! Type your messages (Ctrl+C to exit):")
+	log.Println("Agent ready! Type your messages (press Enter twice to send, Ctrl+C to exit):")
 	
 	scanner := bufio.NewScanner(os.Stdin)
 	
 	for {
 		fmt.Print("\nYou: ")
 		
-		// Read user input
-		if !scanner.Scan() {
+		// Read multi-line input until empty line
+		var lines []string
+		for scanner.Scan() {
+			line := scanner.Text()
+			
+			// Empty line signals end of input
+			if line == "" {
+				break
+			}
+			
+			lines = append(lines, line)
+		}
+		
+		if scanner.Err() != nil {
 			break // EOF or error
 		}
 		
-		userMessage := strings.TrimSpace(scanner.Text())
+		userMessage := strings.TrimSpace(strings.Join(lines, "\n"))
+
+		fmt.Printf("Processing your message: %s\n", userMessage)
 		
 		// Skip empty messages
 		if userMessage == "" {
 			continue
 		}
-
 		
 		// Exit commands
 		if userMessage == "exit" || userMessage == "quit" {

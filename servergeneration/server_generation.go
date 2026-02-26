@@ -92,7 +92,7 @@ var manager = &ServerManager{
 
 // GenerateServerCodeTool creates server code and validates syntax.
 func GenerateServerCodeTool(ag *agent.Agent, params map[string]interface{}) (string, bool) {
-	serverID, serverDescription, tools, err := parseGenerateParams(params)
+	serverID, serverDescription, tools, imports, err := parseGenerateParams(params)
 	if err != nil {
 		return err.Error(), true
 	}
@@ -113,7 +113,7 @@ func GenerateServerCodeTool(ag *agent.Agent, params map[string]interface{}) (str
 	}
 
 	filePath := filepath.Join(genDir, fmt.Sprintf("%s_server.go", serverID))
-	source := buildServerSource(serverID, port, tools)
+	source := buildServerSource(serverID, port, tools, imports)
 	if err := os.WriteFile(filePath, []byte(source), 0644); err != nil {
 		return fmt.Sprintf("Failed to write server code: %v", err), true
 	}
@@ -320,33 +320,43 @@ func ValidateSyntax(sourcePath, binaryPath string) (string, error) {
 	return "Syntax validation passed", nil
 }
 
-func parseGenerateParams(params map[string]interface{}) (string, string, []GeneratedTool, error) {
+func parseGenerateParams(params map[string]interface{}) (string, string, []GeneratedTool, []string, error) {
 	serverID, _ := params["server_id"].(string)
 	serverDescription, _ := params["server_description"].(string)
 	if strings.TrimSpace(serverID) == "" {
-		return "", "", nil, fmt.Errorf("server_id is required")
+		return "", "", nil, nil, fmt.Errorf("server_id is required")
 	}
 	if strings.TrimSpace(serverDescription) == "" {
-		return "", "", nil, fmt.Errorf("server_description is required")
+		return "", "", nil, nil, fmt.Errorf("server_description is required")
 	}
 
 	toolsRaw, ok := params["tools"].([]interface{})
 	if !ok || len(toolsRaw) == 0 {
-		return "", "", nil, fmt.Errorf("tools array is required and must be non-empty")
+		return "", "", nil, nil, fmt.Errorf("tools array is required and must be non-empty")
+	}
+
+	// Parse optional imports - defaults to empty slice
+	imports := make([]string, 0)
+	if importsRaw, ok := params["imports"].([]interface{}); ok {
+		for _, imp := range importsRaw {
+			if impStr, ok := imp.(string); ok && strings.TrimSpace(impStr) != "" {
+				imports = append(imports, impStr)
+			}
+		}
 	}
 
 	tools := make([]GeneratedTool, 0, len(toolsRaw))
 	for _, t := range toolsRaw {
 		toolMap, ok := t.(map[string]interface{})
 		if !ok {
-			return "", "", nil, fmt.Errorf("each tool must be an object")
+			return "", "", nil, nil, fmt.Errorf("each tool must be an object")
 		}
 		toolID, _ := toolMap["tool_id"].(string)
 		description, _ := toolMap["description"].(string)
 		inputSchema, _ := toolMap["input_schema"].(map[string]interface{})
 		handlerCode, _ := toolMap["handler_code"].(string)
 		if strings.TrimSpace(toolID) == "" || strings.TrimSpace(handlerCode) == "" {
-			return "", "", nil, fmt.Errorf("each tool must include tool_id and handler_code")
+			return "", "", nil, nil, fmt.Errorf("each tool must include tool_id and handler_code")
 		}
 		tools = append(tools, GeneratedTool{
 			ToolID:      toolID,
@@ -356,7 +366,7 @@ func parseGenerateParams(params map[string]interface{}) (string, string, []Gener
 		})
 	}
 
-	return serverID, serverDescription, tools, nil
+	return serverID, serverDescription, tools, imports, nil
 }
 
 func parseToolTests(params map[string]interface{}) (map[string]map[string]interface{}, error) {
@@ -414,10 +424,16 @@ func getProcessFromParams(params map[string]interface{}) (*ServerGenerationProce
 	return process, nil
 }
 
-func buildServerSource(serverID string, port int, tools []GeneratedTool) string {
+func buildServerSource(serverID string, port int, tools []GeneratedTool, imports []string) string {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+
 	sb.WriteString("import (\n")
+
+	for _, i := range imports {
+		sb.WriteString("\t\"" + i + "\"\n")
+	}
+
 	sb.WriteString("\t\"encoding/json\"\n")
 	sb.WriteString("\t\"log\"\n")
 	sb.WriteString("\t\"net/http\"\n")

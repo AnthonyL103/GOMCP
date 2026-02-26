@@ -6,12 +6,12 @@ import (
 	"net/http"
 )
 
-type CalvinsEvent struct {
+type AnthonysEvent struct {
 	Title string `json:"title"`
 	Time  string `json:"time"`
 }
 
-var Calvins_events = []CalvinsEvent{
+var Anthonys_events = []AnthonysEvent{
 	{Title: "Meeting with Bob", Time: "2024-10-01T10:00:00Z"},
 	{Title: "Dentist appointment", Time: "2024-10-02T15:00:00Z"},
 }
@@ -21,8 +21,8 @@ func main() {
 
 	http.HandleFunc("/execute/add_event", handleAddEvent)
 
-	log.Println("Starting test schedule server on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Println("Starting schedule server on port 8081")
+	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
 
@@ -53,7 +53,7 @@ func handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Calvins_events)
+	json.NewEncoder(w).Encode(Anthonys_events)
 }
 
 func handleAddEvent(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func handleAddEvent(w http.ResponseWriter, r *http.Request) {
 
 	for _, event := range events {
 		if eventMap, ok := event.(map[string]interface{}); ok {
-			Calvins_events = append(Calvins_events, CalvinsEvent{
+			Anthonys_events = append(Anthonys_events, AnthonysEvent{
 				Title: eventMap["title"].(string),
 				Time:  eventMap["time"].(string),
 			})
@@ -98,7 +98,7 @@ func handleAddEvent(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"events": Calvins_events,
+		"events": Anthonys_events,
 	})
 }
 
