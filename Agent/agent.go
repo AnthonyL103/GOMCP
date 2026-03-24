@@ -3,11 +3,10 @@ package agent
 import (
 	"fmt"
 	"strings"
-	"github.com/AnthonyL103/GOMCP/tool"
+
 	"github.com/AnthonyL103/GOMCP/registry"
 	"github.com/AnthonyL103/GOMCP/server"
-
-	
+	"github.com/AnthonyL103/GOMCP/tool"
 )
 
 func isString(val interface{}) bool {
@@ -26,13 +25,14 @@ func isFloat(val interface{}) bool {
 }
 
 type AgentDetails struct {
-	AgentID string
+	AgentID     string
 	Description string
 	ServerCount int
-	ToolCount int
+	ToolCount   int
 	// ServerTools maps ServerID -> map of ToolName -> Tool
-	ServerTools map[string]map[string]*tool.Tool
+	ServerTools      map[string]map[string]*tool.Tool
 	ServerGeneration bool
+	VoiceChat        bool
 }
 
 type LLMConfig struct {
@@ -42,16 +42,16 @@ type LLMConfig struct {
 	MaxTokens   int
 }
 
-
 type Agent struct {
-	AgentID string
-	Description string
-	Registry *registry.Registry
-	LLMConfig *LLMConfig
+	AgentID          string
+	Description      string
+	Registry         *registry.Registry
+	LLMConfig        *LLMConfig
 	ServerGeneration bool
+	VoiceChat        bool
 }
 
-//return list of valid models for the user 
+// return list of valid models for the user
 func getModelList() []string {
 	return []string{
 		"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini",
@@ -78,7 +78,7 @@ func validateLLMConfig(LLMConfig *LLMConfig) {
 	if LLMConfig.MaxTokens == 0 || !isInt(LLMConfig.MaxTokens) {
 		panic("LLMConfig.MaxTokens is required and must be an int")
 	}
-	
+
 	validModels := map[string]bool{
 		// OpenAI GPT models (current)
 		"gpt-4o":              true,
@@ -88,23 +88,21 @@ func validateLLMConfig(LLMConfig *LLMConfig) {
 		"o1-preview":          true,
 		"o1-mini":             true,
 		"gpt-3.5-turbo":       true, // legacy but still supported
-		
+
 		// Claude 4.5 models (latest)
-		"claude-opus-4-5-20251101":     true,
-		"claude-sonnet-4-5-20250929":   true,
-		"claude-haiku-4-5-20251001":    true,
-		
+		"claude-opus-4-5-20251101":   true,
+		"claude-sonnet-4-5-20250929": true,
+		"claude-haiku-4-5-20251001":  true,
+
 		// Claude 3.5 models (legacy)
-		"claude-3-5-sonnet-20241022":   true,
-		"claude-3-5-haiku-20241022":    true,
+		"claude-3-5-sonnet-20241022": true,
+		"claude-3-5-haiku-20241022":  true,
 	}
-	
+
 	if !validModels[LLMConfig.Model] {
 		panic(fmt.Sprintf("Invalid model '%s'. Supported models: %v", LLMConfig.Model, getModelList()))
 	}
 }
-
-
 
 func NewAgent(
 	agentID string,
@@ -112,6 +110,8 @@ func NewAgent(
 	registry *registry.Registry,
 	LLMConfig *LLMConfig,
 	serverGeneration bool,
+	voiceChat bool,
+
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
 	description = strings.TrimSpace(description)
@@ -127,19 +127,19 @@ func NewAgent(
 		panic("Registry cannot be nil")
 	}
 
-
 	validateLLMConfig(LLMConfig)
 
 	return &Agent{
-		AgentID:     agentID,
-		Description: description,
-		Registry:    registry,
-		LLMConfig:   LLMConfig,
+		AgentID:          agentID,
+		Description:      description,
+		Registry:         registry,
+		LLMConfig:        LLMConfig,
 		ServerGeneration: serverGeneration,
+		VoiceChat:        voiceChat,
 	}
 }
 
-func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
+func (a *Agent) GetAgentDetails(agent *Agent) *AgentDetails {
 	if a == nil {
 		panic("Agent cannot be nil")
 	}
@@ -148,7 +148,7 @@ func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
 	serverTools := make(map[string]map[string]*tool.Tool)
 	serverGeneration := a.ServerGeneration
 	toolCount := 0
-	
+
 	for _, server := range a.Registry.Servers {
 		servers[server.ServerID] = server
 		serverTools[server.ServerID] = make(map[string]*tool.Tool)
@@ -158,13 +158,14 @@ func (a *Agent)GetAgentDetails(agent *Agent) *AgentDetails {
 			toolCount++
 		}
 	}
-	
+
 	return &AgentDetails{
-		AgentID:     a.AgentID,
-		Description: a.Description,
-		ServerCount: len(servers),
-		ToolCount:   toolCount,
-		ServerTools: serverTools,
+		AgentID:          a.AgentID,
+		Description:      a.Description,
+		ServerCount:      len(servers),
+		ToolCount:        toolCount,
+		ServerTools:      serverTools,
 		ServerGeneration: serverGeneration,
+		VoiceChat:        a.VoiceChat,
 	}
 }

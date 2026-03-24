@@ -3,7 +3,7 @@ package llmprotocol
 
 import (
     "fmt"
-    "github.com/AnthonyL103/GOMCP/agent"
+    "github.com/AnthonyL103/GOMCP/Agent"
     "encoding/json"
 )
 

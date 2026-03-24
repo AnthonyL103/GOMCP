@@ -7,8 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/server"
-	"github.com/AnthonyL103/GOMCP/agent"
 )
 
 func buildcommand(config *server.RuntimeConfig) (string, []string, error) {
@@ -52,6 +53,7 @@ func buildcommand(config *server.RuntimeConfig) (string, []string, error) {
 		return cmd, args, nil
 	}
 }
+
 // StartServer launches a server process and returns the process handle
 func StartServer(srv *server.MCPServer) (*os.Process, error) {
 	config := srv.RuntimeConfig
@@ -74,11 +76,10 @@ func StartServer(srv *server.MCPServer) (*os.Process, error) {
 	return cmd.Process, nil
 }
 
-
 // StartAllServers launches all servers and returns their process handles
 func StartAllServers(ag *agent.Agent) ([]*os.Process, error) {
 	processes := []*os.Process{}
-	
+
 	for serverID, srv := range ag.Registry.Servers {
 		proc, err := StartServer(srv)
 		if err != nil {
@@ -90,6 +91,6 @@ func StartAllServers(ag *agent.Agent) ([]*os.Process, error) {
 		}
 		processes = append(processes, proc)
 	}
-	
+
 	return processes, nil
 }
