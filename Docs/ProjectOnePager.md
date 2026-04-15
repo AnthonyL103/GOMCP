@@ -2,11 +2,11 @@
 
 ## Problem
 
-Building AI agents that can use external tools requires significant boilerplate: provider-specific API formatting, tool schema management, server lifecycle control, and conversation history tracking. Developers rewrite this for every project. Non-technical users are locked out entirely — there's no simple way to leverage MCP-style tool orchestration without writing code.
+Building AI agents that can use external tools requires significant boilerplate: provider-specific API formatting, tool schema management, server lifecycle control, and conversation history tracking. Developers rewrite this for every project. Non-technical users are locked out entirely, and there's no simple way to leverage MCP-style tool orchestration without writing code.
 
 ## Solution
 
-GoMCP is a Go-based Model Context Protocol framework that lets AI agents dynamically discover, invoke, and even **create** tool servers at runtime. Configuration is entirely YAML-driven — no code changes needed to add tools, swap LLM providers, or wire up new servers. A planned hosted web product will extend this to non-technical users through a browser-based chat interface.
+GoMCP is a Go-based Model Context Protocol framework that lets AI agents dynamically discover, invoke, and even **create** tool servers at runtime. Configuration is entirely YAML-driven, meaning configuration (prompts/declarations) never overlap with code and adding tools becomes as simple as writing/generating functions (language agnostic) and specifying the file path, function_names, and purpose. A planned hosted web product will extend this to non-technical users through a browser-based chat interface.
 
 ## Unique Value Proposition
 
@@ -67,9 +67,9 @@ User Input
 | **LLM Providers** | Anthropic, OpenAI | Same |
 | **Config** | YAML (gopkg.in/yaml.v3) | Same + DB-backed |
 | **Frontend** | CLI | React + Vite + TypeScript |
-| **Auth & DB** | — | Supabase (Auth + Postgres) |
+| **Auth & DB** | — | AWS RDS/Clickhouse |
 | **Secrets** | Env vars / config | Encrypted Postgres + server-side key |
-| **Hosting** | Local | Render/Fly.io (backend), Vercel/Netlify (frontend) |
+| **Hosting** | Local | AWS Lambda/EC2(backend), AWS Amplify/Cloudfront(frontend) |
 
 ## Roadmap Summary
 
