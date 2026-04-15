@@ -69,7 +69,7 @@ User Input
 | **Frontend** | CLI | React + Vite + TypeScript |
 | **Auth & DB** | — | AWS RDS/Clickhouse |
 | **Secrets** | Env vars / config | Encrypted Postgres + server-side key |
-| **Hosting** | Local | AWS Lambda/EC2(backend), AWS Amplify/Cloudfront(frontend) |
+| **Hosting** | Local | AWS EC2 (backend — requires persistent child processes), AWS Amplify / CloudFront + S3 (frontend) |
 
 ## Roadmap Summary
 
