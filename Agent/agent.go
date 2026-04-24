@@ -33,6 +33,7 @@ type AgentDetails struct {
 	ServerTools      map[string]map[string]*tool.Tool
 	ServerGeneration bool
 	VoiceChat        bool
+	InfraGeneration  bool
 }
 
 type LLMConfig struct {
@@ -49,6 +50,7 @@ type Agent struct {
 	LLMConfig        *LLMConfig
 	ServerGeneration bool
 	VoiceChat        bool
+	InfraGeneration  bool
 }
 
 // return list of valid models for the user
@@ -111,6 +113,7 @@ func NewAgent(
 	LLMConfig *LLMConfig,
 	serverGeneration bool,
 	voiceChat bool,
+	infraGeneration bool,
 
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
@@ -136,6 +139,7 @@ func NewAgent(
 		LLMConfig:        LLMConfig,
 		ServerGeneration: serverGeneration,
 		VoiceChat:        voiceChat,
+		InfraGeneration:  infraGeneration, // default to false, can be set via config
 	}
 }
 
@@ -167,5 +171,6 @@ func (a *Agent) GetAgentDetails(agent *Agent) *AgentDetails {
 		ServerTools:      serverTools,
 		ServerGeneration: serverGeneration,
 		VoiceChat:        a.VoiceChat,
+		InfraGeneration:  a.InfraGeneration,
 	}
 }

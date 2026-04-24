@@ -25,6 +25,7 @@ type AgentDefinition struct {
 	Servers          []string      `yaml:"servers"` // Paths to server YAML files
 	ServerGeneration bool          `yaml:"server_generation"`
 	VoiceChat        bool          `yaml:"voice_chat"`
+	InfraGeneration  bool          `yaml:"infra_generation"`
 }
 
 // LLMConfigYAML represents LLM settings from YAML
@@ -101,6 +102,11 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.VoiceChat = false
 	}
 
+	if !agentDef.InfraGeneration || !isBool(agentDef.InfraGeneration) {
+		fmt.Printf("Infrastructure generation disabled or invalid for agent %s, defaulting to false\n", agentDef.AgentID)
+		agentDef.InfraGeneration = false
+	}
+
 	// Create agent using your NewAgent constructor
 	ag := agent.NewAgent(
 		agentDef.AgentID,
@@ -109,6 +115,7 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		LLMConfig,
 		agentDef.ServerGeneration,
 		agentDef.VoiceChat,
+		agentDef.InfraGeneration,
 	)
 
 	return ag, nil
@@ -124,30 +131,4 @@ func resolveEnvVar(value string) string {
 
 	// Return as-is if not an env var
 	return value
-}
-
-func TestConfigParser() {
-	ag, err := ParseAgentConfig()
-	if err != nil {
-		fmt.Println("ParseAgentConfig error:", err)
-		return
-	}
-	if ag == nil {
-		fmt.Println("No agent returned")
-		return
-	}
-
-	// print agent summary
-	details := ag.GetAgentDetails(ag)
-	fmt.Printf("Agent ID: %s\nDescription: %s\nServerCount: %d\nToolCount: %d\nServerGeneration: %t\n",
-		details.AgentID, details.Description, details.ServerCount, details.ToolCount, details.ServerGeneration)
-
-	// iterate registry servers (map[string]*MCPServer)
-	for serverID, server := range ag.Registry.Servers {
-		fmt.Printf("Server ID: '%s'\nServer description: '%s'\n", serverID, server.Description)
-
-		for toolName, tool := range server.Tools {
-			fmt.Printf("  Tool Key: '%s' Tool Handler '%s' Tool Description '%s' \n", toolName, tool.Handler, tool.Description)
-		}
-	}
 }
