@@ -3,7 +3,6 @@ agents:
     description: "An assistant to help me with various tasks, including coding, research, and general problem-solving."
     llm:
       model: claude-opus-4-5-20251101 
-      api_key: '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'
       temperature: 0.7
       max_tokens: 3000
     servers:

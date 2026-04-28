@@ -87,14 +87,18 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 		// Look up the server that owns this tool
 		toolInfo, exists := availableTools[currentToolName]
 		if !exists {
-			if !isServerGenerationToolAnthropic(currentToolName) {
+			if !isServerGenerationToolAnthropic(currentToolName) && !isInfraGenerationToolAnthropic(currentToolName) {
 				return fmt.Errorf("tool %s not found", currentToolName)
 			}
-			toolInfo = llmprotocol.ToolInfo{ServerID: "server_generation", Handler: currentToolName}
+			toolInfo = llmprotocol.ToolInfo{ServerID: "infrastructure_generation", Handler: currentToolName}
 		}
 
 		if isServerGenerationToolAnthropic(currentToolName) && !ag.ServerGeneration {
 			return fmt.Errorf("tool %s not available; enable server generation in config", currentToolName)
+		}
+
+		if isInfraGenerationToolAnthropic(currentToolName) && !ag.InfraGeneration {
+			return fmt.Errorf("tool %s not available; enable infra generation in config", currentToolName)
 		}
 
 		// Execute the tool
@@ -363,4 +367,8 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (stri
 // isServerGenerationTool returns true for tools handled in-process.
 func isServerGenerationToolAnthropic(name string) bool {
 	return servergeneration.IsServerGenerationTool(name)
+}
+
+func isInfraGenerationToolAnthropic(name string) bool {
+	return infrageneration.IsInfraGenerationTool(name)
 }

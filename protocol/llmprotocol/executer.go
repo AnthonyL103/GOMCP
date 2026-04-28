@@ -9,6 +9,7 @@ import (
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
+	"github.com/AnthonyL103/GOMCP/infrageneration"
 	"github.com/AnthonyL103/GOMCP/server"
 	"github.com/AnthonyL103/GOMCP/servergeneration"
 )
@@ -21,7 +22,6 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
 		panic("Tool Call does not exist")
 	}
 
-	// Special handling for tool generation (in-process execution)
 	if tc.ToolID == servergeneration.ToolGenerateServerCode {
 		return servergeneration.GenerateServerCodeTool(ag, tc.Parameters)
 	}
@@ -40,6 +40,26 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
 
 	if tc.ToolID == servergeneration.ToolDeleteServer {
 		return servergeneration.DeleteServerTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolCollectAWSRequirements {
+		return infrageneration.CollectAWSRequirementsTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolCollectAWSCredentials {
+		return infrageneration.CollectAWSCredentialsTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolGenerateAWSTerraform {
+		return infrageneration.GenerateAWSTerraformTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolValidateAWSTerraform {
+		return infrageneration.ValidateAWSTerraformTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolDeployAWSTerraform {
+		return infrageneration.DeployAWSTerraformTool(ag, tc.Parameters)
 	}
 
 	// Get the server

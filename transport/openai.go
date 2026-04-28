@@ -10,6 +10,7 @@ import (
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
+	"github.com/AnthonyL103/GOMCP/infrageneration"
 	"github.com/AnthonyL103/GOMCP/protocol/llmprotocol"
 	"github.com/AnthonyL103/GOMCP/servergeneration"
 )
@@ -106,14 +107,18 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 			// Look up the server that owns this tool
 			toolInfo, exists := availableTools[currentToolName]
 			if !exists {
-				if !isServerGenerationToolOpenAI(currentToolName) {
+				if !isServerGenerationToolOpenAI(currentToolName) && !isInfraGenerationToolOpenAI(currentToolName) {
 					return fmt.Errorf("tool %s not found", currentToolName)
 				}
-				toolInfo = llmprotocol.ToolInfo{ServerID: "server_generation", Handler: currentToolName}
+				toolInfo = llmprotocol.ToolInfo{ServerID: "infrastructure_generation", Handler: currentToolName}
 			}
 
 			if isServerGenerationToolOpenAI(currentToolName) && !ag.ServerGeneration {
 				return fmt.Errorf("tool %s not available; enable server generation in config", currentToolName)
+			}
+
+			if isInfraGenerationToolOpenAI(currentToolName) && !ag.InfraGeneration {
+				return fmt.Errorf("tool %s not available; enable infra generation in config", currentToolName)
 			}
 
 			// Execute the tool
@@ -367,4 +372,8 @@ func (p *OpenAIProvider) jsonString(data map[string]interface{}) string {
 
 func isServerGenerationToolOpenAI(name string) bool {
 	return servergeneration.IsServerGenerationTool(name)
+}
+
+func isInfraGenerationToolOpenAI(name string) bool {
+	return infrageneration.IsInfraGenerationTool(name)
 }
