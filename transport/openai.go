@@ -20,6 +20,9 @@ type OpenAIProvider struct {
 	Model       string
 	Temperature float32
 	MaxTokens   int
+	// Optional callback fired immediately after each tool cycle completes,
+	// before the next LLM call. Used by the HTTP server to broadcast over WS.
+	OnToolCall func(msg chat.Message)
 }
 
 func NewOpenAIProvider(config *agent.LLMConfig) *OpenAIProvider {
@@ -129,6 +132,30 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 				Parameters: currentToolArgs,
 			})
 
+			// Build the completed tool cycle message
+			toolMsg := chat.Message{
+				Role: "assistant",
+				ToolCall: &chat.ToolCall{
+					ServerID:   toolInfo.ServerID,
+					ToolID:     currentToolName,
+					Handler:    toolInfo.Handler,
+					Parameters: currentToolArgs,
+					Reasoning:  "",
+					ToolUseID:  toolCallID,
+				},
+				ToolResult: &chat.ToolResult{
+					ServerID:  toolInfo.ServerID,
+					ToolID:    currentToolName,
+					Content:   toolResult,
+					IsError:   isError,
+					ToolUseID: toolCallID,
+				},
+			}
+
+			if p.OnToolCall != nil {
+				p.OnToolCall(toolMsg)
+			}
+
 			// Add tool result message
 			messages = append(messages, map[string]interface{}{
 				"role":         "tool",
@@ -137,24 +164,7 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 			})
 
 			// Save this tool cycle to chat history
-			c.AddAssistantMessage(
-				"",
-				&chat.ToolCall{
-					ServerID:   toolInfo.ServerID,
-					ToolID:     currentToolName,
-					Handler:    toolInfo.Handler,
-					Parameters: currentToolArgs,
-					Reasoning:  "",
-					ToolUseID:  toolCallID,
-				},
-				&chat.ToolResult{
-					ServerID:  toolInfo.ServerID,
-					ToolID:    currentToolName,
-					Content:   toolResult,
-					IsError:   isError,
-					ToolUseID: toolCallID,
-				},
-			)
+			c.AddAssistantMessage("", toolMsg.ToolCall, toolMsg.ToolResult)
 		}
 
 		// Send follow-up request with ALL tool results
