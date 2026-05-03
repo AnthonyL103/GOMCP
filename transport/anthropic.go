@@ -20,6 +20,9 @@ type AnthropicProvider struct {
 	Model       string
 	Temperature float32
 	MaxTokens   int
+	// Optional callback fired immediately after each tool cycle completes,
+	// before the next LLM call. Used by the HTTP server to broadcast over WS.
+	OnToolCall func(msg chat.Message)
 }
 
 func NewAnthropicProvider(config *agent.LLMConfig) *AnthropicProvider {
@@ -36,20 +39,13 @@ func (p *AnthropicProvider) GetProviderName() string {
 }
 
 func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
-	// Add user message to chat
 	c.AddUserMessage(userMessage)
 
-	// Extract agent instructions
 	agentInstructions := llmprotocol.GetAgentInstructions(ag)
-
-	// Extract and format tools
 	availableTools := llmprotocol.ExtractTools(ag)
 	formattedTools := p.buildTools(availableTools, ag)
-
-	// Convert chat history to Anthropic format
 	messages := p.buildMessages(c)
 
-	// Create Anthropic API request
 	requestBody := map[string]interface{}{
 		"model":       p.Model,
 		"max_tokens":  p.MaxTokens,
@@ -62,29 +58,24 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 		requestBody["tools"] = formattedTools
 	}
 
-	// Send request
 	response, err := p.sendHTTPRequest(requestBody)
 	if err != nil {
 		return err
 	}
 
-	// Parse response - returns primitive values
 	responseText, toolCallID, toolName, toolParams, stopReason, err := p.parseResponse(response)
 	if err != nil {
 		return err
 	}
 
-	// Handle tool calls - loop for multiple sequential tool uses
 	toolsProcessed := false
 	for stopReason == "tool_use" && toolName != "" {
 		toolsProcessed = true
 
-		// Save current tool info before it gets overwritten
 		currentToolCallID := toolCallID
 		currentToolName := toolName
 		currentToolParams := toolParams
 
-		// Look up the server that owns this tool
 		toolInfo, exists := availableTools[currentToolName]
 		if !exists {
 			if !isServerGenerationToolAnthropic(currentToolName) && !isInfraGenerationToolAnthropic(currentToolName) {
@@ -101,7 +92,6 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 			return fmt.Errorf("tool %s not available; enable infra generation in config", currentToolName)
 		}
 
-		// Execute the tool
 		toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
 			ServerID:   toolInfo.ServerID,
 			ToolID:     currentToolName,
@@ -119,10 +109,32 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 		}
 		fmt.Println("Calling tool:", currentToolName, "with params:", truncatetoolparams)
 
-		// Step 3: Send tool result back to LLM
+		// Build the completed tool cycle message
+		toolMsg := chat.Message{
+			Role: "assistant",
+			ToolCall: &chat.ToolCall{
+				ServerID:   toolInfo.ServerID,
+				ToolID:     currentToolName,
+				Handler:    toolInfo.Handler,
+				Parameters: currentToolParams,
+				Reasoning:  "",
+				ToolUseID:  currentToolCallID,
+			},
+			ToolResult: &chat.ToolResult{
+				ServerID:  toolInfo.ServerID,
+				ToolID:    currentToolName,
+				Content:   toolResult,
+				IsError:   isError,
+				ToolUseID: currentToolCallID,
+			},
+		}
+
+		if p.OnToolCall != nil {
+			p.OnToolCall(toolMsg)
+		}
+
 		messages = p.buildMessages(c)
 
-		// Add assistant's tool_use message
 		messages = append(messages, map[string]interface{}{
 			"role": "assistant",
 			"content": []map[string]interface{}{
@@ -135,7 +147,6 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 			},
 		})
 
-		// Add user's tool_result message
 		messages = append(messages, map[string]interface{}{
 			"role": "user",
 			"content": []map[string]interface{}{
@@ -148,43 +159,25 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 			},
 		})
 
-		// Send follow-up request with tool result
 		requestBody["messages"] = messages
 		response, err = p.sendHTTPRequest(requestBody)
 		if err != nil {
 			return err
 		}
 
-		// Update all variables for next iteration
 		responseText, toolCallID, toolName, toolParams, stopReason, err = p.parseResponse(response)
 		if err != nil {
 			return err
 		}
 
-		// Save this tool cycle to chat history using CURRENT tool info
+		// Save to chat history after callback so history is consistent
 		c.AddAssistantMessage(
 			responseText,
-			&chat.ToolCall{
-				ServerID:   toolInfo.ServerID,
-				ToolID:     currentToolName,
-				Handler:    toolInfo.Handler,
-				Parameters: currentToolParams,
-				Reasoning:  "",
-				ToolUseID:  currentToolCallID,
-			},
-			&chat.ToolResult{
-				ServerID:  toolInfo.ServerID,
-				ToolID:    currentToolName,
-				Content:   toolResult,
-				IsError:   isError,
-				ToolUseID: currentToolCallID,
-			},
+			toolMsg.ToolCall,
+			toolMsg.ToolResult,
 		)
-
-		// Loop continues if stopReason is still "tool_use"
 	}
 
-	// Only save text response if no tools were used
 	if !toolsProcessed {
 		c.AddAssistantMessage(responseText, nil, nil)
 	}
@@ -204,9 +197,7 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
 			})
 
 		case "assistant":
-			// If message has both ToolCall and ToolResult, expand into 3 messages
 			if msg.ToolCall != nil && msg.ToolResult != nil {
-				// 1. Assistant message with tool_use
 				messages = append(messages, map[string]interface{}{
 					"role": "assistant",
 					"content": []map[string]interface{}{
@@ -219,7 +210,6 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
 					},
 				})
 
-				// 2. User message with tool_result
 				messages = append(messages, map[string]interface{}{
 					"role": "user",
 					"content": []map[string]interface{}{
@@ -232,7 +222,6 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
 					},
 				})
 
-				// 3. Assistant message with final text response
 				if msg.Content != "" {
 					messages = append(messages, map[string]interface{}{
 						"role": "assistant",
@@ -245,16 +234,13 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
 					})
 				}
 			} else {
-				// Regular assistant message without complete tool cycle
 				content := []map[string]interface{}{}
-
 				if msg.Content != "" {
 					content = append(content, map[string]interface{}{
 						"type": "text",
 						"text": msg.Content,
 					})
 				}
-
 				if len(content) > 0 {
 					messages = append(messages, map[string]interface{}{
 						"role":    "assistant",
@@ -262,7 +248,6 @@ func (p *AnthropicProvider) buildMessages(c *chat.Chat) []map[string]interface{}
 					})
 				}
 			}
-
 		}
 	}
 
@@ -332,8 +317,6 @@ func (p *AnthropicProvider) sendHTTPRequest(requestBody map[string]interface{}) 
 	return response, nil
 }
 
-// parseResponse extracts relevant data from Anthropic's response
-// Returns: (responseText, toolCallID, toolName, toolParams, stopReason, error)
 func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (string, string, string, map[string]interface{}, string, error) {
 	content, ok := response["content"].([]interface{})
 	if !ok || len(content) == 0 {
@@ -353,7 +336,6 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (stri
 		switch blockType {
 		case "text":
 			responseText = blockMap["text"].(string)
-
 		case "tool_use":
 			toolCallID = blockMap["id"].(string)
 			toolName = blockMap["name"].(string)
@@ -364,7 +346,6 @@ func (p *AnthropicProvider) parseResponse(response map[string]interface{}) (stri
 	return responseText, toolCallID, toolName, toolParams, stopReason, nil
 }
 
-// isServerGenerationTool returns true for tools handled in-process.
 func isServerGenerationToolAnthropic(name string) bool {
 	return servergeneration.IsServerGenerationTool(name)
 }
