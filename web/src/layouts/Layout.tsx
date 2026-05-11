@@ -1,6 +1,14 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, Link, useNavigate } from "react-router-dom";
+import { signOut } from "aws-amplify/auth";
 
 export default function Layout() {
+  const navigate = useNavigate();
+
+  async function handleSignOut() {
+    await signOut();
+    void navigate("/login", { replace: true });
+  }
+
   return (
     <div className="flex h-screen bg-stone-50 text-stone-900">
       {/* sidebar */}
@@ -11,8 +19,19 @@ export default function Layout() {
           </span>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-2">
-          <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-stone-500 hover:bg-stone-100 transition-colors">
-            + New chat
+          <Link
+            to="/projects/new"
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-stone-500 hover:bg-stone-100 transition-colors"
+          >
+            + New Project
+          </Link>
+        </div>
+        <div className="border-t border-stone-200 px-3 py-3">
+          <button
+            onClick={handleSignOut}
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors"
+          >
+            Sign out
           </button>
         </div>
       </aside>
