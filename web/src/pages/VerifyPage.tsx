@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { confirmSignUp } from "aws-amplify/auth";
+import { IoArrowBack } from "react-icons/io5";
 
 export default function VerifyPage() {
   const [code, setCode] = useState("");
@@ -25,7 +26,14 @@ export default function VerifyPage() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-bg px-4">
+    <div className="relative flex h-screen items-center justify-center bg-bg px-4">
+      <Link
+        to="/"
+        className="absolute left-4 top-4 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-border-subtle hover:text-ink-secondary"
+      >
+        <IoArrowBack className="h-4 w-4" />
+        Home
+      </Link>
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <span className="text-2xl font-semibold tracking-tight text-ink">

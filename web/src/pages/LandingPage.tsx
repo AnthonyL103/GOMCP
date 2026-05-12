@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getCurrentUser } from "aws-amplify/auth";
 import Orb from '../components/Orb';
 
 const FEATURES = [
@@ -20,6 +22,14 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(() => setIsAuthed(true))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-bg text-ink">
       {/* Nav */}
@@ -29,18 +39,29 @@ export default function LandingPage() {
             GoMCP
           </span>
           <nav className="flex items-center gap-2">
-            <Link
-              to="/login"
-              className="rounded-lg px-4 py-1.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-border-subtle hover:text-ink"
-            >
-              Sign in
-            </Link>
-            <Link
-              to="/signup"
-              className="rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
-            >
-              Get started
-            </Link>
+            {isAuthed ? (
+              <Link
+                to="/projects"
+                className="rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+              >
+                My Projects
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="rounded-lg px-4 py-1.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-border-subtle hover:text-ink"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -73,18 +94,32 @@ export default function LandingPage() {
             no cloud expertise required.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              to="/signup"
-              className="pointer-events-auto rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-hover"
-            >
-              Start a project
-            </Link>
-            <Link
-              to="/login"
-              className="pointer-events-auto rounded-lg border border-border bg-surface-raised/30 px-6 py-2.5 text-sm font-medium text-ink-secondary shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-raised/50"
-            >
-              Sign in
-            </Link>
+            { isAuthed ? (
+
+              <Link
+                to="/projects"
+                className="pointer-events-auto rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-hover"
+              >
+                View my projects
+              </Link>
+
+              ) : (
+              <>
+                <Link
+                  to="/signup"
+                  className="pointer-events-auto rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-hover"
+                >
+                  Start a project
+                </Link>
+                <Link
+                  to="/login"
+                  className="pointer-events-auto rounded-lg border border-border bg-surface-raised/30 px-6 py-2.5 text-sm font-medium text-ink-secondary shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-raised/50"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
+
           </div>
         </div>
       </section>
@@ -130,10 +165,10 @@ export default function LandingPage() {
             minutes.
           </p>
           <Link
-            to="/signup"
+            to={isAuthed ? "/projects" : "/signup"}
             className="mt-6 rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
           >
-            Get started for free
+            {isAuthed ? "Go to my projects" : "Get started for free"}
           </Link>
         </div>
       </section>

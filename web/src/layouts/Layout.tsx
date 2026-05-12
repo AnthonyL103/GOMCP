@@ -6,7 +6,7 @@ export default function Layout() {
 
   async function handleSignOut() {
     await signOut();
-    void navigate("/login", { replace: true });
+    void navigate("/", { replace: true });
   }
 
   return (
