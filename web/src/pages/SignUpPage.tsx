@@ -33,16 +33,16 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-stone-50 px-4">
+    <div className="flex h-screen items-center justify-center bg-bg px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <span className="text-2xl font-semibold tracking-tight text-stone-800">
+          <span className="text-2xl font-semibold tracking-tight text-ink">
             GoMCP
           </span>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white px-8 py-10 shadow-sm">
-          <h1 className="mb-6 text-xl font-semibold tracking-tight text-stone-800">
+        <div className="rounded-2xl border border-border bg-surface-raised px-8 py-10 shadow-sm">
+          <h1 className="mb-6 text-xl font-semibold tracking-tight text-ink">
             Create your account
           </h1>
 
@@ -50,7 +50,7 @@ export default function SignUpPage() {
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="email"
-                className="text-sm font-medium text-stone-700"
+                className="text-sm font-medium text-ink-secondary"
               >
                 Email
               </label>
@@ -62,14 +62,14 @@ export default function SignUpPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+                className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="password"
-                className="text-sm font-medium text-stone-700"
+                className="text-sm font-medium text-ink-secondary"
               >
                 Password
               </label>
@@ -81,14 +81,14 @@ export default function SignUpPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+                className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="confirm"
-                className="text-sm font-medium text-stone-700"
+                className="text-sm font-medium text-ink-secondary"
               >
                 Confirm password
               </label>
@@ -100,7 +100,7 @@ export default function SignUpPage() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="••••••••"
-                className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+                className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
               />
             </div>
 
@@ -109,17 +109,17 @@ export default function SignUpPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 rounded-lg bg-stone-800 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Creating account…" : "Create account"}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-stone-500">
+          <p className="mt-6 text-center text-sm text-ink-secondary">
             Already have an account?{" "}
             <Link
               to="/login"
-              className="font-medium text-stone-800 hover:underline"
+              className="font-medium text-ink hover:underline"
             >
               Sign in
             </Link>
