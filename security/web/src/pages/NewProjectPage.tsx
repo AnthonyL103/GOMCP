@@ -59,8 +59,8 @@ function OptionCard({
       onClick={onSelect}
       className={`w-full rounded-xl border px-5 py-4 text-left text-sm transition-all ${
         selected
-          ? "border-stone-700 bg-stone-800 text-white shadow-sm"
-          : "border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+          ? "border-brand bg-brand text-white shadow-sm"
+          : "border-border bg-surface-raised text-ink-secondary hover:border-border hover:bg-bg"
       }`}
     >
       {label}
@@ -77,7 +77,7 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-stone-700">{label}</label>
+      <label className="text-sm font-medium text-ink-secondary">{label}</label>
       {children}
     </div>
   );
@@ -103,7 +103,7 @@ function Step1({
           value={answers.name}
           onChange={(e) => set("name", e.target.value)}
           placeholder="My awesome project"
-          className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+          className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
         />
       </Field>
       <Field label="Describe what it does in a sentence or two">
@@ -113,7 +113,7 @@ function Step1({
           value={answers.description}
           onChange={(e) => set("description", e.target.value)}
           placeholder="It helps users…"
-          className="resize-none rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+          className="resize-none rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
         />
       </Field>
     </div>
@@ -136,9 +136,9 @@ function OptionStep({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-base font-medium text-stone-800">{question}</p>
+        <p className="text-base font-medium text-ink">{question}</p>
         {subheading && (
-          <p className="mt-1 text-sm text-stone-500">{subheading}</p>
+          <p className="mt-1 text-sm text-ink-secondary">{subheading}</p>
         )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -182,7 +182,7 @@ function Step9({
           value={answers.domain}
           onChange={(e) => set("domain", e.target.value)}
           placeholder="e.g. myapp.com"
-          className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 placeholder-stone-400 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+          className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
         />
       </Field>
     </div>
@@ -219,21 +219,21 @@ function ReviewScreen({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-stone-800">
+        <h2 className="text-xl font-semibold text-ink">
           Here's what we've got
         </h2>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-ink-secondary">
           Review your answers before we get to work.
         </p>
       </div>
 
-      <div className="rounded-xl border border-stone-200 bg-white divide-y divide-stone-100">
+      <div className="rounded-xl border border-border bg-surface-raised divide-y divide-border-subtle">
         {REVIEW_LABELS.filter((r) => answers[r.key]).map((r) => (
           <div key={r.key} className="flex gap-4 px-5 py-3.5">
-            <span className="w-40 shrink-0 text-xs font-medium text-stone-400 pt-0.5">
+            <span className="w-40 shrink-0 text-xs font-medium text-ink-muted pt-0.5">
               {r.label}
             </span>
-            <span className="text-sm text-stone-700">{answers[r.key]}</span>
+            <span className="text-sm text-ink-secondary">{answers[r.key]}</span>
           </div>
         ))}
       </div>
@@ -242,14 +242,14 @@ function ReviewScreen({
         <button
           type="button"
           onClick={onBack}
-          className="rounded-lg border border-stone-200 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50"
+          className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-bg"
         >
           Back
         </button>
         <button
           type="button"
           onClick={onSubmit}
-          className="rounded-lg bg-stone-800 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700"
+          className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
         >
           Create this project
         </button>
@@ -456,9 +456,9 @@ export default function NewProjectPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Progress bar */}
-      <div className="h-0.5 w-full bg-stone-100">
+      <div className="h-0.5 w-full bg-border-subtle">
         <motion.div
-          className="h-full bg-stone-700"
+          className="h-full bg-brand"
           animate={{ width: `${progress * 100}%` }}
           transition={{ duration: 0.4, ease: "easeInOut" }}
         />
@@ -472,11 +472,11 @@ export default function NewProjectPage() {
           {/* Step indicator */}
           {!isReview && (
             <div className="mb-6 flex items-center gap-3">
-              <span className="text-xs font-medium text-stone-400">
+              <span className="text-xs font-medium text-ink-muted">
                 Step {step} of {TOTAL_STEPS}
               </span>
-              <span className="text-xs text-stone-300">·</span>
-              <span className="text-xs text-stone-500">
+              <span className="text-xs text-ink-muted">·</span>
+              <span className="text-xs text-ink-secondary">
                 {stepTitles[step - 1]}
               </span>
             </div>
@@ -509,7 +509,7 @@ export default function NewProjectPage() {
                       type="button"
                       onClick={goBack}
                       disabled={step === 1}
-                      className="rounded-lg border border-stone-200 px-5 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-0"
+                      className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-bg disabled:pointer-events-none disabled:opacity-0"
                     >
                       Back
                     </button>
@@ -517,7 +517,7 @@ export default function NewProjectPage() {
                       type="button"
                       onClick={goNext}
                       disabled={!isStepValid()}
-                      className="rounded-lg bg-stone-800 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {step === TOTAL_STEPS ? "Review" : "Next"}
                     </button>

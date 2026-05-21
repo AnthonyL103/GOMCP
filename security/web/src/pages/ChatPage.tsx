@@ -103,13 +103,13 @@ export default function ChatPage() {
             <div key={i}>
               {msg.role === "user" ? (
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl bg-stone-200/70 px-4 py-3 text-stone-900 whitespace-pre-wrap">
+                  <div className="max-w-[80%] rounded-2xl bg-bubble px-4 py-3 text-ink whitespace-pre-wrap">
                     {msg.content}
                   </div>
                 </div>
               ) : (
                 <div className="flex justify-start">
-                  <div className="max-w-[80%] text-stone-800 leading-relaxed whitespace-pre-wrap">
+                  <div className="max-w-[80%] text-ink leading-relaxed whitespace-pre-wrap">
                     {msg.content}
                   </div>
                 </div>
@@ -120,9 +120,9 @@ export default function ChatPage() {
           {loading && (
             <div className="flex justify-start">
               <div className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-stone-400" />
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:150ms]" />
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-stone-400 [animation-delay:300ms]" />
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted" />
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:150ms]" />
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:300ms]" />
               </div>
             </div>
           )}
@@ -138,7 +138,7 @@ export default function ChatPage() {
               {error}
             </div>
           )}
-          <div className="rounded-2xl border border-stone-200 bg-white shadow-sm transition-shadow focus-within:shadow-md">
+          <div className="rounded-2xl border border-border bg-surface-raised shadow-sm transition-shadow focus-within:shadow-md">
             <textarea
               ref={inputRef}
               value={input}
@@ -147,13 +147,13 @@ export default function ChatPage() {
               disabled={loading || !sessionId}
               placeholder="What are we building?"
               rows={1}
-              className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-base text-stone-800 placeholder-stone-400 outline-none disabled:opacity-50"
+              className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-base text-ink placeholder-ink-muted outline-none disabled:opacity-50"
             />
             <div className="flex items-center justify-end px-3 pb-3">
               <button
                 onClick={() => void handleSend()}
                 disabled={loading || !sessionId || !input.trim()}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-800 text-white transition-colors hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white transition-colors hover:bg-brand-hover disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <LuSendHorizontal className="h-4 w-4" />
               </button>

@@ -16,8 +16,8 @@ export default function AuthGuard() {
 
   if (checking) {
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-50">
-        <span className="text-sm text-stone-400">Loading…</span>
+      <div className="flex h-screen items-center justify-center bg-bg">
+        <span className="text-sm text-ink-muted">Loading…</span>
       </div>
     );
   }

@@ -21,21 +21,21 @@ function ProjectCard({ project }: { project: Project }) {
   return (
     <Link
       to={`/projects/${project.id}`}
-      className="group flex flex-col rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
+      className="group flex flex-col rounded-2xl border border-border bg-surface-raised p-6 shadow-sm transition-shadow hover:shadow-md"
     >
       <div className="flex-1">
-        <h3 className="text-base font-semibold text-stone-800 group-hover:text-stone-600 transition-colors">
+          <h3 className="text-base font-semibold text-ink group-hover:text-ink-secondary transition-colors">
           {project.name}
         </h3>
         {project.description && (
-          <p className="mt-1.5 text-sm leading-relaxed text-stone-500 line-clamp-2">
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary line-clamp-2">
             {project.description}
           </p>
         )}
       </div>
-      <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-4">
-        <span className="text-xs text-stone-400">{date}</span>
-        <span className="text-xs font-medium text-stone-400 group-hover:text-stone-600 transition-colors">
+      <div className="mt-4 flex items-center justify-between border-t border-border-subtle pt-4">
+        <span className="text-xs text-ink-muted">{date}</span>
+        <span className="text-xs font-medium text-ink-muted group-hover:text-ink-secondary transition-colors">
           View →
         </span>
       </div>
@@ -46,9 +46,9 @@ function ProjectCard({ project }: { project: Project }) {
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-200 bg-white shadow-sm">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-raised shadow-sm">
         <svg
-          className="h-6 w-6 text-stone-400"
+          className="h-6 w-6 text-ink-muted"
           fill="none"
           stroke="currentColor"
           strokeWidth={1.5}
@@ -61,14 +61,14 @@ function EmptyState() {
           />
         </svg>
       </div>
-      <h3 className="text-base font-semibold text-stone-800">No projects yet</h3>
-      <p className="mt-1.5 max-w-xs text-sm text-stone-500">
+      <h3 className="text-base font-semibold text-ink">No projects yet</h3>
+      <p className="mt-1.5 max-w-xs text-sm text-ink-secondary">
         Create your first project and GoMCP will generate the infrastructure for
         you.
       </p>
       <Link
         to="/projects/new"
-        className="mt-6 rounded-lg bg-stone-800 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700"
+        className="mt-6 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
       >
         Create your first project
       </Link>
@@ -80,14 +80,14 @@ export default function ProjectsPage() {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       {/* Page header */}
-      <div className="flex items-center justify-between border-b border-stone-200 bg-white/80 px-8 py-5 backdrop-blur-sm">
-        <h1 className="text-xl font-semibold tracking-tight text-stone-800">
+      <div className="flex items-center justify-between border-b border-border bg-surface-raised/80 px-8 py-5 backdrop-blur-sm">
+        <h1 className="text-xl font-semibold tracking-tight text-ink">
           Your Projects
         </h1>
         {projects.length > 0 && (
           <Link
             to="/projects/new"
-            className="rounded-lg bg-stone-800 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
           >
             + New Project
           </Link>

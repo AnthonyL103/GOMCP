@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { confirmSignUp } from "aws-amplify/auth";
+import { IoArrowBack } from "react-icons/io5";
 
 export default function VerifyPage() {
   const [code, setCode] = useState("");
@@ -25,22 +26,29 @@ export default function VerifyPage() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-stone-50 px-4">
+    <div className="relative flex h-screen items-center justify-center bg-bg px-4">
+      <Link
+        to="/"
+        className="absolute left-4 top-4 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-border-subtle hover:text-ink-secondary"
+      >
+        <IoArrowBack className="h-4 w-4" />
+        Home
+      </Link>
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <span className="text-2xl font-semibold tracking-tight text-stone-800">
+          <span className="text-2xl font-semibold tracking-tight text-ink">
             GoMCP
           </span>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white px-8 py-10 shadow-sm">
-          <h1 className="mb-2 text-xl font-semibold tracking-tight text-stone-800">
+        <div className="rounded-2xl border border-border bg-surface-raised px-8 py-10 shadow-sm">
+          <h1 className="mb-2 text-xl font-semibold tracking-tight text-ink">
             Check your email
           </h1>
-          <p className="mb-6 text-sm text-stone-500">
+          <p className="mb-6 text-sm text-ink-secondary">
             We sent a 6-digit code to{" "}
             {email ? (
-              <span className="font-medium text-stone-700">{email}</span>
+              <span className="font-medium text-ink">{email}</span>
             ) : (
               "your email address"
             )}
@@ -51,7 +59,7 @@ export default function VerifyPage() {
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="code"
-                className="text-sm font-medium text-stone-700"
+                className="text-sm font-medium text-ink-secondary"
               >
                 Verification code
               </label>
@@ -65,7 +73,7 @@ export default function VerifyPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                 placeholder="000000"
-                className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 text-center text-lg tracking-[0.5em] text-stone-800 placeholder-stone-300 outline-none transition-colors focus:border-stone-400 focus:bg-white"
+                className="rounded-lg border border-border bg-surface px-4 py-2.5 text-center text-lg tracking-[0.5em] text-ink placeholder-ink-muted outline-none transition-colors focus:border-ink-muted focus:bg-surface-raised"
               />
             </div>
 
@@ -74,7 +82,7 @@ export default function VerifyPage() {
             <button
               type="submit"
               disabled={loading || code.length !== 6}
-              className="mt-2 rounded-lg bg-stone-800 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Verifying…" : "Confirm"}
             </button>
