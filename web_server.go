@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -180,12 +183,35 @@ type contextKey string
 
 const contextKeyUserID contextKey = "userID"
 
-// corsMiddleware adds permissive CORS headers and handles OPTIONS preflight.
+// vuln_mode returns true when the VULN_MODE environment variable is set to "true".
+// When true, security mitigations are bypassed so attacks can be demonstrated.
+func vulnMode() bool {
+	return strings.EqualFold(os.Getenv("VULN_MODE"), "true")
+}
+
+// corsMiddleware handles CORS preflight and response headers.
+//
+// VULN_MODE=true  → reflects any Origin back (fully permissive — intentionally insecure for demo).
+// VULN_MODE=false → restricts Access-Control-Allow-Origin to the value of the
+//
+//	ALLOWED_ORIGIN env var (defaults to http://localhost:5173 for local dev).
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
+		if allowedOrigin == "" {
+			allowedOrigin = "http://localhost:5173"
 		}
+
+		if vulnMode() {
+			// VULN — reflect any origin (Security Misconfiguration demo)
+			if origin := r.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
+		} else {
+			// HARDENED — only allow the configured frontend origin
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Max-Age", "86400")
@@ -193,6 +219,27 @@ func corsMiddleware(next http.Handler) http.Handler {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeadersMiddleware adds defensive HTTP headers.
+//
+// VULN_MODE=true  → headers are omitted (Security Misconfiguration demo).
+// VULN_MODE=false → full set of security headers is applied.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !vulnMode() {
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			// Never leak internal error details via the Server header
+			w.Header().Set("Server", "")
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -273,6 +320,47 @@ func (h *handler) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// Security-demo chat handlers (no JWT required — XSS demo surface)
+// ============================================================================
+
+// htmlTagRe strips HTML tags for the hardened chat response path.
+var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+// handleChatSession issues a random session ID.
+// No auth required — intentional for the Broken Access Control demo (vuln #2).
+func (h *handler) handleChatSession(w http.ResponseWriter, r *http.Request) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"session_id": hex.EncodeToString(b)})
+}
+
+// handleChatMessage echoes the user message back as the "AI response".
+//
+// VULN_MODE=true  → response contains the raw message (HTML/scripts intact — XSS demo).
+// VULN_MODE=false → HTML tags are stripped before the response is written.
+func (h *handler) handleChatMessage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SessionID string `json:"session_id"`
+		Message   string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	response := body.Message
+	if !vulnMode() {
+		// HARDENED: strip all HTML tags before echoing back
+		response = htmlTagRe.ReplaceAllString(response, "")
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"response": response})
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -299,8 +387,14 @@ func startWebServer(ps *store.ProjectStore) {
 	inner.HandleFunc("POST /projects/{id}/deploy", h.handleDeploy)
 	inner.HandleFunc("GET /projects/{id}/deployment", h.handleGetDeployment)
 
+	// Chat endpoints for the security demo — intentionally unauthenticated.
+	// In VULN_MODE=true this also demonstrates Broken Access Control (#2).
+
 	// Wrap all routes with JWT auth, then CORS on the outside.
 	root := http.NewServeMux()
+	// Unauthenticated paths go directly on root; everything else needs a JWT.
+	root.HandleFunc("POST /api/chat/session", h.handleChatSession)
+	root.HandleFunc("POST /api/chat/message", h.handleChatMessage)
 	root.Handle("/", jwtMiddleware(inner))
 
 	port := os.Getenv("PORT")
@@ -308,9 +402,13 @@ func startWebServer(ps *store.ProjectStore) {
 		port = "8080"
 	}
 
+	if vulnMode() {
+		log.Println("WARNING: VULN_MODE=true — security mitigations are DISABLED (demo only)")
+	}
+
 	srv := &http.Server{
 		Addr:         ":" + port,
-		Handler:      corsMiddleware(root),
+		Handler:      securityHeadersMiddleware(corsMiddleware(root)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 120 * time.Second, // generous for LLM-backed endpoints
 		IdleTimeout:  60 * time.Second,

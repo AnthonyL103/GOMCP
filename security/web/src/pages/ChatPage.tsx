@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { LuSendHorizontal } from "react-icons/lu";
 import { createSession, sendMessage } from "../api";
+import DOMPurify from "dompurify";
+
+// VULN_MODE=true  → assistant messages rendered via dangerouslySetInnerHTML (XSS demo)
+// VULN_MODE=false → content sanitized with DOMPurify before rendering
+const VULN_MODE = import.meta.env.VITE_VULN_MODE === "true";
 
 interface Message {
   role: "user" | "assistant";
@@ -109,9 +114,25 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <div className="flex justify-start">
-                  <div className="max-w-[80%] text-ink leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
+                  {VULN_MODE ? (
+                    /* VULN: raw HTML rendered without sanitization — XSS demo */
+                    <div
+                      className="max-w-[80%] text-ink leading-relaxed"
+                      // eslint-disable-next-line react/no-danger
+                      dangerouslySetInnerHTML={{ __html: msg.content }}
+                    />
+                  ) : (
+                    /* HARDENED: sanitize with DOMPurify before rendering */
+                    <div
+                      className="max-w-[80%] text-ink leading-relaxed"
+                      dangerouslySetInnerHTML={{
+                        __html: DOMPurify.sanitize(msg.content, {
+                          ALLOWED_TAGS: ["b", "i", "em", "strong", "code", "pre", "p", "br", "ul", "ol", "li"],
+                          ALLOWED_ATTR: [],
+                        }),
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>
