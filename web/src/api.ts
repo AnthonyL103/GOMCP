@@ -120,3 +120,13 @@ export function getArtifact(projectId: string): Promise<string> {
 export function deployProject(projectId: string): Promise<void> {
   return apiRequest<void>(`/projects/${projectId}/deploy`, { method: "POST" });
 }
+
+// Returns an authenticated WebSocket URL for the project's live-update stream.
+// Browsers cannot send custom headers on WS upgrades, so the JWT is passed as
+// a query parameter instead.
+export async function getProjectWsUrl(projectId: string): Promise<string> {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.idToken?.toString() ?? "";
+  const wsBase = API_BASE.replace(/^http/, "ws"); // http→ws, https→wss
+  return `${wsBase}/projects/${projectId}/ws?token=${encodeURIComponent(token)}`;
+}

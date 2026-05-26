@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { LuSendHorizontal } from "react-icons/lu";
 import {
-  getProject,
+  getProjectWsUrl,
   postMessage,
   deployProject,
   type Project,
 } from "../api";
-
-const POLL_INTERVAL_MS = 3000;
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +19,7 @@ export default function ChatPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Auto-scroll to bottom whenever messages change.
   useEffect(() => {
@@ -36,37 +34,53 @@ export default function ChatPage() {
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }, [input]);
 
-  // Load project on mount, then poll every 3 s for updates.
+  // Connect to the project's WebSocket on mount. The backend pushes the full
+  // Project JSON blob on every mutation (new message, status change, deployment).
   useEffect(() => {
     if (!id) return;
 
-    async function fetchProject() {
-      try {
-        const p = await getProject(id!);
-        setProject(p);
-        setLoadError(null);
+    let ws: WebSocket | null = null;
+    let cancelled = false;
 
-        // Stop polling once the project is in a terminal state with a
-        // deployment result (nothing left to update).
-        if (
-          (p.status === "complete" || p.status === "failed") &&
-          p.deployment
-        ) {
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
+    async function connect() {
+      try {
+        const url = await getProjectWsUrl(id!);
+        if (cancelled) return;
+
+        ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onmessage = (e) => {
+          try {
+            setProject(JSON.parse(e.data as string) as Project);
+            setLoadError(null);
+          } catch {
+            // ignore malformed frames
           }
-        }
+        };
+
+        ws.onerror = () => {
+          if (!cancelled) setLoadError("Connection error — please refresh.");
+        };
+
+        ws.onclose = (ev) => {
+          if (!cancelled && ev.code !== 1000) {
+            setLoadError("Connection closed — please refresh.");
+          }
+        };
       } catch (err: unknown) {
-        setLoadError(err instanceof Error ? err.message : "Failed to load project");
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Failed to connect");
+        }
       }
     }
 
-    void fetchProject();
-    pollRef.current = setInterval(() => void fetchProject(), POLL_INTERVAL_MS);
+    void connect();
 
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      cancelled = true;
+      ws?.close(1000);
+      wsRef.current = null;
     };
   }, [id]);
 
@@ -78,7 +92,7 @@ export default function ChatPage() {
     setSending(true);
     try {
       await postMessage(id!, trimmed);
-      // Optimistically add the user message; polling will add the response.
+      // Optimistically add the user message; WebSocket will push the response.
       setProject((prev) =>
         prev
           ? {
@@ -104,7 +118,7 @@ export default function ChatPage() {
     setDeploying(true);
     try {
       await deployProject(id!);
-      // Polling will pick up the deployment result.
+      // WebSocket will push the updated project with deployment result.
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Deployment request failed");
     } finally {
