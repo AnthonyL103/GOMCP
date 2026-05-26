@@ -7,6 +7,7 @@ import VerifyPage from "./pages/VerifyPage";
 import LoginPage from "./pages/LoginPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import NewProjectPage from "./pages/NewProjectPage";
+import ChatPage from "./pages/ChatPage";
 
 export const router = createBrowserRouter([
   // Public landing — no sidebar
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
         children: [
           { path: "/projects", element: <ProjectsPage /> },
           { path: "/projects/new", element: <NewProjectPage /> },
+          { path: "/projects/:id/chat", element: <ChatPage /> },
         ],
       },
     ],

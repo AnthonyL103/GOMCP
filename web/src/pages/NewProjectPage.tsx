@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { createProject } from "../api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -211,10 +212,14 @@ function ReviewScreen({
   answers,
   onBack,
   onSubmit,
+  submitting,
+  submitError,
 }: {
   answers: Answers;
   onBack: () => void;
   onSubmit: () => void;
+  submitting: boolean;
+  submitError: string | null;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -238,20 +243,28 @@ function ReviewScreen({
         ))}
       </div>
 
+      {submitError && (
+        <div className="rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          {submitError}
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
           onClick={onBack}
-          className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-bg"
+          disabled={submitting}
+          className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-bg disabled:opacity-50"
         >
           Back
         </button>
         <button
           type="button"
           onClick={onSubmit}
-          className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+          disabled={submitting}
+          className="rounded-lg bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Create this project
+          {submitting ? "Creating…" : "Create this project"}
         </button>
       </div>
     </div>
@@ -282,6 +295,8 @@ export default function NewProjectPage() {
   const [step, setStep] = useState(1); // 1-9; 10 = review
   const [dir, setDir] = useState(1); // 1 = forward, -1 = back
   const [answers, setAnswers] = useState<Answers>(EMPTY);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -327,9 +342,17 @@ export default function NewProjectPage() {
     containerRef.current?.scrollTo({ top: 0 });
   }
 
-  function handleSubmit() {
-    // Intentionally no-op this sprint
-    void navigate("/projects");
+  async function handleSubmit() {
+    if (submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const project = await createProject(answers as Record<string, string>);
+      void navigate(`/projects/${project.id}/chat`);
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong");
+      setSubmitting(false);
+    }
   }
 
   const progress = step <= TOTAL_STEPS ? (step - 1) / TOTAL_STEPS : 1;
@@ -497,7 +520,9 @@ export default function NewProjectPage() {
                 <ReviewScreen
                   answers={answers}
                   onBack={goBack}
-                  onSubmit={handleSubmit}
+                  onSubmit={() => void handleSubmit()}
+                  submitting={submitting}
+                  submitError={submitError}
                 />
               ) : (
                 <div className="flex flex-col gap-8">

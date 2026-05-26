@@ -1,18 +1,9 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-
-// Shape of a project — extend this when the backend is wired up
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  createdAt: string; // ISO string
-}
-
-// Swap this out for a real API call in a future sprint
-const projects: Project[] = [];
+import { listProjects, type Project } from "../api";
 
 function ProjectCard({ project }: { project: Project }) {
-  const date = new Date(project.createdAt).toLocaleDateString("en-US", {
+  const date = new Date(project.created_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -20,16 +11,16 @@ function ProjectCard({ project }: { project: Project }) {
 
   return (
     <Link
-      to={`/projects/${project.id}`}
+      to={`/projects/${project.id}/chat`}
       className="group flex flex-col rounded-2xl border border-border bg-surface-raised p-6 shadow-sm transition-shadow hover:shadow-md"
     >
       <div className="flex-1">
-          <h3 className="text-base font-semibold text-ink group-hover:text-ink-secondary transition-colors">
+        <h3 className="text-base font-semibold text-ink group-hover:text-ink-secondary transition-colors">
           {project.name}
         </h3>
-        {project.description && (
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary line-clamp-2">
-            {project.description}
+        {project.answers?.description && (
+          <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary line-clamp-2">
+            {project.answers.description}
           </p>
         )}
       </div>
@@ -77,6 +68,19 @@ function EmptyState() {
 }
 
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listProjects()
+      .then(setProjects)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to load projects");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       {/* Page header */}
@@ -96,7 +100,19 @@ export default function ProjectsPage() {
 
       {/* Content */}
       <div className="flex-1 px-8 py-8">
-        {projects.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted" />
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:150ms]" />
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:300ms]" />
+            </div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-sm text-red-500">{error}</p>
+          </div>
+        ) : projects.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

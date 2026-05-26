@@ -1,15 +1,23 @@
 import { defineConfig } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import babel from '@rolldown/plugin-babel'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      babel: {
+        presets: [reactCompilerPreset()],
+      },
+    }),
     tailwindcss(),
-    babel({ presets: [reactCompilerPreset()] })
   ],
+  resolve: {
+    preserveSymlinks: true,
+  },
+  optimizeDeps: {
+    exclude: ['aws-amplify', '@aws-amplify/auth', '@aws-crypto/sha256-js'],
+  },
   server: {
     proxy: {
       '/api': {
