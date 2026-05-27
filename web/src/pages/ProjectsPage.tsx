@@ -2,127 +2,113 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listProjects, type Project } from "../api";
 
-function ProjectCard({ project }: { project: Project }) {
-  const date = new Date(project.created_at).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  return (
-    <Link
-      to={`/projects/${project.id}/chat`}
-      className="group flex flex-col rounded-2xl border border-border bg-surface-raised p-6 shadow-sm transition-shadow hover:shadow-md"
-    >
-      <div className="flex-1">
-        <h3 className="text-base font-semibold text-ink group-hover:text-ink-secondary transition-colors">
-          {project.name}
-        </h3>
-        {project.answers?.description && (
-          <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary line-clamp-2">
-            {project.answers.description}
-          </p>
-        )}
-      </div>
-      <div className="mt-4 flex items-center justify-between border-t border-border-subtle pt-4">
-        <span className="text-xs text-ink-muted">{date}</span>
-        <span className="text-xs font-medium text-ink-muted group-hover:text-ink-secondary transition-colors">
-          View →
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-raised shadow-sm">
-        <svg
-          className="h-6 w-6 text-ink-muted"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v8.25"
-          />
-        </svg>
-      </div>
-      <h3 className="text-base font-semibold text-ink">No projects yet</h3>
-      <p className="mt-1.5 max-w-xs text-sm text-ink-secondary">
-        Create your first project and GoMCP will generate the infrastructure for
-        you.
-      </p>
-      <Link
-        to="/projects/new"
-        className="mt-6 rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
-      >
-        Create your first project
-      </Link>
-    </div>
-  );
-}
-
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listProjects()
-      .then(setProjects)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to load projects");
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const items = await listProjects();
+        if (!cancelled) {
+          setProjects(items);
+          setError(null);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load projects");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      {/* Page header */}
-      <div className="flex items-center justify-between border-b border-border bg-surface-raised/80 px-8 py-5 backdrop-blur-sm">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">
-          Your Projects
-        </h1>
-        {projects.length > 0 && (
+    <div className="flex flex-1 flex-col px-6 py-10">
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink-muted">
+              Your projects
+            </p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
+              Saved sessions for your account
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
+              These are loaded from the backend by user id and can be reopened in the chat flow.
+            </p>
+          </div>
           <Link
             to="/projects/new"
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+            className="inline-flex rounded-lg bg-brand px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
           >
-            + New Project
+            Start a new project
           </Link>
-        )}
-      </div>
+        </div>
 
-      {/* Content */}
-      <div className="flex-1 px-8 py-8">
-        {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted" />
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:150ms]" />
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:300ms]" />
+        <div className="mt-8 rounded-3xl border border-border bg-surface-raised p-6 shadow-sm">
+          {loading ? (
+            <div className="flex items-center gap-3 text-sm text-ink-secondary">
+              <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-brand" />
+              Loading your projects…
             </div>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center py-24">
-            <p className="text-sm text-red-500">{error}</p>
-          </div>
-        ) : projects.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
-            ))}
-          </div>
-        )}
+          ) : error ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-600">
+              {error}
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="text-center">
+              <h2 className="text-lg font-semibold text-ink">No saved projects yet</h2>
+              <p className="mt-2 text-sm text-ink-secondary">
+                Create a project, chat with the agent, and save the session to see it here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {projects.map((project) => (
+                <Link
+                  key={project.id}
+                  to={`/projects/${project.id}/chat`}
+                  className="rounded-2xl border border-border bg-bg p-5 text-left transition-transform hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold text-ink">{project.name}</h2>
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {project.id}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-medium text-brand">
+                      {project.status}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 line-clamp-3 text-sm leading-relaxed text-ink-secondary">
+                    {typeof project.answers?.description === "string"
+                      ? project.answers.description
+                      : "Open to continue the chat and review the generated Terraform."}
+                  </p>
+
+                  <div className="mt-4 flex items-center justify-between text-xs text-ink-muted">
+                    <span>{project.user_id ?? "unknown user"}</span>
+                    <span>{new Date(project.updated_at).toLocaleString()}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

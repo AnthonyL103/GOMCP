@@ -1,25 +1,17 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { createProject } from "../api";
+import {
+  buildProjectPrompt,
+  createChatSessionId,
+  type ProjectAnswers,
+} from "../api";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface Answers {
-  name: string;
-  description: string;
-  projectType: string;
-  dataStorage: string;
-  background: string;
-  audience: string;
-  usage: string;
-  reliability: string;
-  sensitiveData: string;
-  location: string;
-  domain: string;
-}
+type Answers = ProjectAnswers;
 
 const EMPTY: Answers = {
   name: "",
@@ -33,6 +25,21 @@ const EMPTY: Answers = {
   sensitiveData: "",
   location: "",
   domain: "",
+};
+
+
+const TEST_ANSWERS: Answers = {
+  name: "My awesome project",
+  description: "It helps users…",
+  projectType: "A website people visit in a browser",
+  dataStorage: "User accounts and records (names, orders, settings)",
+  background: "Yes — things like sending emails or notifications",
+  audience: "Our customers",
+  usage: "Thousands",
+  reliability: "It would be a serious problem",
+  sensitiveData: "Yes",
+  location: "North America",
+  domain: "e.g. myapp.com",
 };
 
 // ---------------------------------------------------------------------------
@@ -295,6 +302,7 @@ export default function NewProjectPage() {
   const [step, setStep] = useState(1); // 1-9; 10 = review
   const [dir, setDir] = useState(1); // 1 = forward, -1 = back
   const [answers, setAnswers] = useState<Answers>(EMPTY);
+
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -342,13 +350,46 @@ export default function NewProjectPage() {
     containerRef.current?.scrollTo({ top: 0 });
   }
 
+
+
+  async function handlesubmittest() {
+    if (submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const sessionId = createChatSessionId();
+      const initialPrompt = buildProjectPrompt(TEST_ANSWERS);
+      sessionStorage.setItem(`gomcp-chat:${sessionId}`, initialPrompt);
+      void navigate(`/projects/${sessionId}/chat`, {
+        state: {
+          sessionId,
+          initialPrompt,
+          projectName: TEST_ANSWERS.name,
+        },
+      });
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong");
+      setSubmitting(false);
+    }
+
+  }
+  
+
   async function handleSubmit() {
     if (submitting) return;
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const project = await createProject(answers as Record<string, string>);
-      void navigate(`/projects/${project.id}/chat`);
+      const sessionId = createChatSessionId();
+      const initialPrompt = buildProjectPrompt(answers);
+      sessionStorage.setItem(`gomcp-chat:${sessionId}`, initialPrompt);
+      void navigate(`/projects/${sessionId}/chat`, {
+        state: {
+          sessionId,
+          initialPrompt,
+          projectName: answers.name,
+        },
+      });
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : "Something went wrong");
       setSubmitting(false);
@@ -386,6 +427,7 @@ export default function NewProjectPage() {
             value={answers.projectType}
             onChange={(v) => set("projectType", v)}
           />
+          
         );
       case 3:
         return (
@@ -478,6 +520,9 @@ export default function NewProjectPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      <button className="bg-brand text-white px-4 py-2 rounded hover:bg-brand-hover" onClick={handlesubmittest}>
+        Submit Test Form
+      </button>
       {/* Progress bar */}
       <div className="h-0.5 w-full bg-border-subtle">
         <motion.div

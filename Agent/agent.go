@@ -51,6 +51,9 @@ type Agent struct {
 	ServerGeneration bool
 	VoiceChat        bool
 	InfraGeneration  bool
+	Remote           bool
+	RemoteRoute      string
+	
 }
 
 // return list of valid models for the user
@@ -114,6 +117,8 @@ func NewAgent(
 	serverGeneration bool,
 	voiceChat bool,
 	infraGeneration bool,
+	remote bool,
+	remoteRoute string,
 
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
@@ -140,6 +145,8 @@ func NewAgent(
 		ServerGeneration: serverGeneration,
 		VoiceChat:        voiceChat,
 		InfraGeneration:  infraGeneration, // default to false, can be set via config
+		Remote:           remote,
+		RemoteRoute:      remoteRoute,
 	}
 }
 

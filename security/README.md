@@ -19,6 +19,8 @@ All vulnerabilities are guarded by a single flag so the same codebase demonstrat
 
 Set the environment variable before starting the server:
 
+The backend reads `VULN_MODE` at process start, so change the flag only by stopping and restarting `go run .`.
+
 ```bash
 # Vulnerable — all mitigations disabled
 VULN_MODE=true go run .
@@ -59,6 +61,8 @@ VITE_VULN_MODE=true npm run dev
 # 3. Follow the attack scripts
 bash security/scripts/01-xss-attack.sh
 bash security/scripts/03-misconfiguration-attack.sh
+
+# If the scripts still report SAFE, restart the backend with the desired flag.
 
 # 4. Flip the flag and verify each attack is blocked
 VULN_MODE=false go run .

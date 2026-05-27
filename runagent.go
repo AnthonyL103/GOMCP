@@ -1,182 +1,215 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"strings"
+	"sync"
 	"syscall"
-	"time"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
-	"github.com/AnthonyL103/GOMCP/protocol/parseagentprotocol"
 	"github.com/AnthonyL103/GOMCP/transport"
-	voicechat "github.com/AnthonyL103/GOMCP/voice"
+	"github.com/gorilla/websocket"
 )
 
-// findModel determines which provider to use based on model name
+// -------------------------------------------------------------------
+// WebSocket hub
+// -------------------------------------------------------------------
+
+type Hub struct {
+	mu      sync.RWMutex
+	writeMu sync.Mutex
+	clients map[*websocket.Conn]struct{}
+}
+
+func newHub() *Hub { return &Hub{clients: make(map[*websocket.Conn]struct{})} }
+
+func (h *Hub) add(c *websocket.Conn) {
+	h.mu.Lock()
+	h.clients[c] = struct{}{}
+	h.mu.Unlock()
+}
+
+func (h *Hub) remove(c *websocket.Conn) {
+	h.mu.Lock()
+	delete(h.clients, c)
+	h.mu.Unlock()
+	c.Close()
+}
+
+// Broadcast sends any value as JSON to all connected WS clients.
+func (h *Hub) Broadcast(v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[Hub] Broadcast marshal error: %v", err)
+		return
+	}
+	h.mu.RLock()
+	clients := make([]*websocket.Conn, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
+	}
+	clientCount := len(clients)
+	h.mu.RUnlock()
+	log.Printf("[Hub] Broadcasting to %d clients: %s", clientCount, string(data[:min(len(data), 200)]))
+
+	// Serialize writes because gorilla/websocket connections are not safe for concurrent writers.
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
+	for _, c := range clients {
+		if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("[Hub] Write error: %v", err)
+		}
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// -------------------------------------------------------------------
+// Server
+// -------------------------------------------------------------------
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+type Server struct {
+	ag       *agent.Agent
+	provider transport.Provider
+	chat     *chat.Chat
+	hub      *Hub
+}
+
+// POST /chat — same logic as the CLI loop, just over HTTP
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.provider.SendRequest(s.chat, s.ag, body.Message); err != nil {
+		log.Printf("Error: %v", err)
+		s.hub.Broadcast(map[string]string{"type": "error", "message": err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	messages := s.chat.GetMessages()
+	log.Printf("Chat request complete, total messages: %d", len(messages))
+
+	if len(messages) == 0 {
+		http.Error(w, "no response", http.StatusInternalServerError)
+		return
+	}
+
+	lastMsg := messages[len(messages)-1]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(lastMsg)
+}
+
+// GET /ws — clients connect here to receive tool update broadcasts
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[WS] upgrade error: %v", err)
+		return
+	}
+	s.hub.add(conn)
+	log.Printf("[WS] client connected: %s, total clients: %d", conn.RemoteAddr(), len(s.hub.clients))
+
+	go func() {
+		defer func() {
+			s.hub.remove(conn)
+			log.Printf("[WS] client disconnected: %s", conn.RemoteAddr())
+		}()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				if err.Error() != "websocket: close sent" {
+					log.Printf("[WS] read error: %v", err)
+				}
+				break
+			}
+		}
+	}()
+}
+
+// POST /done — trigger cleanup of cloned repos and clear chat context
+func (s *Server) handleDone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Cleanup requested via /done endpoint")
+
+	// Clear chat context for next audit
+	s.chat = chat.NewChat("session-1", 50)
+	log.Println("Chat context cleared")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "cleaned"})
+}
+
+// -------------------------------------------------------------------
+// Unchanged helpers
+// -------------------------------------------------------------------
+
 func findModel(model string) string {
-	openAIModels := []string{
-		"gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
-		"o1-preview", "o1-mini",
-	}
-
-	anthropicModels := []string{
-		"claude-opus-4-5-20251101",
-		"claude-sonnet-4-5-20250929",
-		"claude-haiku-4-5-20251001",
-	}
-
-	// Check if it's an OpenAI model
-	for _, m := range openAIModels {
+	for _, m := range []string{"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini"} {
 		if m == model {
 			return "OpenAI"
 		}
 	}
-
-	// Check if it's an Anthropic model
-	for _, m := range anthropicModels {
+	for _, m := range []string{"claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001"} {
 		if m == model {
 			return "Anthropic"
 		}
 	}
-
-	// Unknown model
 	return ""
 }
 
-// createProvider creates the appropriate provider based on the model
 func createProvider(ag *agent.Agent) (transport.Provider, error) {
-	llmConfig := ag.LLMConfig
-
-	providerType := findModel(llmConfig.Model)
-
-	switch providerType {
+	switch findModel(ag.LLMConfig.Model) {
 	case "Anthropic":
-		return transport.NewAnthropicProvider(llmConfig), nil
+		return transport.NewAnthropicProvider(ag.LLMConfig), nil
 	case "OpenAI":
-		return transport.NewOpenAIProvider(llmConfig), nil
+		return transport.NewOpenAIProvider(ag.LLMConfig), nil
 	default:
-		return nil, fmt.Errorf("unsupported model: %s", llmConfig.Model)
+		return nil, fmt.Errorf("unsupported model: %s", ag.LLMConfig.Model)
 	}
 }
 
-func runagent() {
-	// Parse agent config
-	ag, err := parseagentprotocol.ParseAgentConfig()
-	if err != nil {
-		log.Fatal("Failed to parse agent config:", err)
-	}
-
-	// Start all servers and track their processes
-	log.Println("Starting MCP servers...")
-	processes, err := StartAllServers(ag)
-	if err != nil {
-		log.Fatal("Failed to start servers:", err)
-	}
-
-	// Setup graceful shutdown
-	setupGracefulShutdown(processes)
-
-	// Give servers time to start up
-	time.Sleep(2 * time.Second)
-	log.Println("All servers started!")
-
-	// Create chat session
-	chat := chat.NewChat("session-1", 50)
-
-	// Create provider based on model
-	provider, err := createProvider(ag)
-	if err != nil {
-		log.Fatal("Failed to create provider:", err)
-	}
-
-	log.Printf("Using provider: %s", provider.GetProviderName())
-
-	if ag.VoiceChat {
-		log.Println("Voice chat enabled - initializing voice chat parser")
-		vcParser := voicechat.NewVoiceChatParser(chat, ag, provider)
-		go vcParser.Start()
-	}
-	// Interactive loop
-	log.Println("Agent ready! Type your messages (press Enter twice to send, Ctrl+C to exit):")
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		fmt.Print("\nYou: ")
-
-		// Read multi-line input until empty line
-		var lines []string
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			// Empty line signals end of input
-			if line == "" {
-				break
-			}
-
-			lines = append(lines, line)
-		}
-
-		if scanner.Err() != nil {
-			break // EOF or error
-		}
-
-		userMessage := strings.TrimSpace(strings.Join(lines, "\n"))
-
-		// Skip empty messages
-		if userMessage == "" {
-			continue
-		}
-
-		// Exit commands
-		if userMessage == "exit" || userMessage == "quit" {
-			log.Println("Shutting down...")
-			break
-		}
-
-		// Send message to agent
-		err := provider.SendRequest(chat, ag, userMessage)
-		if err != nil {
-			log.Printf("Error: %v", err)
-			continue
-		}
-
-		// Print last assistant message
-		messages := chat.GetMessages()
-		if len(messages) > 0 {
-			lastMsg := messages[len(messages)-1]
-			if lastMsg.Role == "assistant" {
-				fmt.Printf("\nAssistant: %s\n", lastMsg.Content)
-			}
-		}
-	}
-
-	log.Println("Goodbye!")
-}
-
-// setupGracefulShutdown handles Ctrl+C and kills server processes
 func setupGracefulShutdown(processes []*os.Process) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
 	go func() {
 		<-sigChan
-		log.Println("\nReceived shutdown signal, cleaning up...")
-
-		// Kill all server processes
+		log.Println("Shutting down...")
 		for _, proc := range processes {
 			if proc != nil {
-				log.Printf("Killing process PID: %d", proc.Pid)
 				proc.Kill()
 			}
 		}
 
-		log.Println("Cleanup complete. Exiting.")
 		os.Exit(0)
 	}()
 }

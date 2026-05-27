@@ -47,6 +47,7 @@ const (
 	ToolGenerateAWSTerraform   = "generate_aws_terraform_iteration"
 	ToolValidateAWSTerraform   = "validate_aws_terraform_iteration"
 	ToolDeployAWSTerraform     = "deploy_aws_terraform_iteration"
+	ToolSaveProjectSession     = "save_project_session"
 )
 
 // GetAWSInfraSystemPrompt returns the AWS-only system prompt used for the infra flow.
@@ -136,6 +137,20 @@ func SharedAWSToolDefinitions() []ToolDefinition {
 					"terminal_mirroring":      map[string]interface{}{"type": "boolean", "description": "Whether terminal progress should be echoed back to the frontend"},
 				},
 				"required": []string{"approval_status", "deployment_target"},
+			},
+		},
+		{
+			Name:        ToolSaveProjectSession,
+			Description: "Persist the completed project session as JSON under data/projects using the user's email as user_id. The backend will save the current chat history automatically; provide the project identifiers and final Terraform so the session can be reloaded later.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"user_id":          map[string]interface{}{"type": "string", "description": "The user's email address or other stable user identifier"},
+					"project_id":       map[string]interface{}{"type": "string", "description": "Unique id for this saved project session"},
+					"project_name":     map[string]interface{}{"type": "string", "description": "Friendly project name shown in the UI"},
+					"terraform_script": map[string]interface{}{"type": "string", "description": "Final generated Terraform to save with the session"},
+				},
+				"required": []string{"user_id", "project_id", "terraform_script"},
 			},
 		},
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/AnthonyL103/GOMCP/servergeneration"
 )
 
-func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
+func ExecuteTool(ag *agent.Agent, c *chat.Chat, tc *chat.ToolCall) (string, bool) {
 	if ag == nil {
 		panic("Agent does not exist")
 	}
@@ -60,6 +60,10 @@ func ExecuteTool(ag *agent.Agent, tc *chat.ToolCall) (string, bool) {
 
 	if tc.ToolID == infrageneration.ToolDeployAWSTerraform {
 		return infrageneration.DeployAWSTerraformTool(ag, tc.Parameters)
+	}
+
+	if tc.ToolID == infrageneration.ToolSaveProjectSession {
+		return infrageneration.SaveProjectSession(ag, c, tc.Parameters)
 	}
 
 	// Get the server

@@ -189,41 +189,6 @@ func vulnMode() bool {
 	return strings.EqualFold(os.Getenv("VULN_MODE"), "true")
 }
 
-// corsMiddleware handles CORS preflight and response headers.
-//
-// VULN_MODE=true  → reflects any Origin back (fully permissive — intentionally insecure for demo).
-// VULN_MODE=false → restricts Access-Control-Allow-Origin to the value of the
-//
-//	ALLOWED_ORIGIN env var (defaults to http://localhost:5173 for local dev).
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
-		if allowedOrigin == "" {
-			allowedOrigin = "http://localhost:5173"
-		}
-
-		if vulnMode() {
-			// VULN — reflect any origin (Security Misconfiguration demo)
-			if origin := r.Header.Get("Origin"); origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			}
-		} else {
-			// HARDENED — only allow the configured frontend origin
-			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		}
-
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // securityHeadersMiddleware adds defensive HTTP headers.
 //
 // VULN_MODE=true  → headers are omitted (Security Misconfiguration demo).
@@ -290,8 +255,18 @@ func (h *handler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	// Phase 2: return all projects for the authenticated user.
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	userID, ok := r.Context().Value(contextKeyUserID).(string)
+	if !ok || strings.TrimSpace(userID) == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing or invalid user context"})
+		return
+	}
+
+	projects := h.store.GetByUserID(userID)
+	if projects == nil {
+		projects = []*store.Project{}
+	}
+
+	writeJSON(w, http.StatusOK, projects)
 }
 
 func (h *handler) handleGetProject(w http.ResponseWriter, r *http.Request) {
@@ -370,14 +345,11 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// ============================================================================
-// Server startup
-// ============================================================================
-
-func startWebServer(ps *store.ProjectStore) {
+// webHandler returns the protected project API handler mounted under the root
+// mux used by main().
+func webHandler(ps *store.ProjectStore) http.Handler {
 	h := &handler{store: ps}
 
-	// Inner mux holds the actual routes.
 	inner := http.NewServeMux()
 	inner.HandleFunc("POST /projects", h.handleCreateProject)
 	inner.HandleFunc("GET /projects", h.handleListProjects)
@@ -387,35 +359,12 @@ func startWebServer(ps *store.ProjectStore) {
 	inner.HandleFunc("POST /projects/{id}/deploy", h.handleDeploy)
 	inner.HandleFunc("GET /projects/{id}/deployment", h.handleGetDeployment)
 
-	// Chat endpoints for the security demo — intentionally unauthenticated.
-	// In VULN_MODE=true this also demonstrates Broken Access Control (#2).
-
-	// Wrap all routes with JWT auth, then CORS on the outside.
-	root := http.NewServeMux()
-	// Unauthenticated paths go directly on root; everything else needs a JWT.
-	root.HandleFunc("POST /api/chat/session", h.handleChatSession)
-	root.HandleFunc("POST /api/chat/message", h.handleChatMessage)
-	root.Handle("/", jwtMiddleware(inner))
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// If running in demo/vuln mode, or DISABLE_AUTH=true, or Cognito not configured,
+	// expose the project API without JWT validation so local demos work.
+	if vulnMode() || strings.EqualFold(os.Getenv("DISABLE_AUTH"), "true") || cognitoRegion == "" || cognitoUserPoolID == "" {
+		log.Println("Auth disabled for project API: vuln mode / DISABLE_AUTH / missing Cognito config detected")
+		return inner
 	}
 
-	if vulnMode() {
-		log.Println("WARNING: VULN_MODE=true — security mitigations are DISABLED (demo only)")
-	}
-
-	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      securityHeadersMiddleware(corsMiddleware(root)),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 120 * time.Second, // generous for LLM-backed endpoints
-		IdleTimeout:  60 * time.Second,
-	}
-
-	log.Printf("web server listening on :%s", port)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("server error: %v", err)
-	}
+	return jwtMiddleware(inner)
 }

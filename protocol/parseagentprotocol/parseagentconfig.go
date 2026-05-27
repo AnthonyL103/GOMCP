@@ -26,6 +26,8 @@ type AgentDefinition struct {
 	ServerGeneration bool          `yaml:"server_generation"`
 	VoiceChat        bool          `yaml:"voice_chat"`
 	InfraGeneration  bool          `yaml:"infra_generation"`
+	Remote           bool          `yaml:"remote"`
+	RemoteRoute      string        `yaml:"remote_route"`
 }
 
 // LLMConfigYAML represents LLM settings from YAML
@@ -116,6 +118,8 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.ServerGeneration,
 		agentDef.VoiceChat,
 		agentDef.InfraGeneration,
+		agentDef.Remote,
+		agentDef.RemoteRoute,
 	)
 
 	return ag, nil

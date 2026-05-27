@@ -19,9 +19,28 @@ const (
 )
 
 type ChatMessage struct {
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	Role       string      `json:"role"`
+	Content    string      `json:"content"`
+	CreatedAt  time.Time   `json:"created_at"`
+	ToolCall   *ToolCall   `json:"tool_call,omitempty"`
+	ToolResult *ToolResult `json:"tool_result,omitempty"`
+}
+
+type ToolCall struct {
+	ServerID   string                 `json:"server_id"`
+	ToolID     string                 `json:"tool_id"`
+	Handler    string                 `json:"handler"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Reasoning  string                 `json:"reasoning,omitempty"`
+	ToolUseID  string                 `json:"tool_use_id"`
+}
+
+type ToolResult struct {
+	ServerID  string `json:"server_id"`
+	ToolID    string `json:"tool_id"`
+	Content   string `json:"content"`
+	IsError   bool   `json:"is_error"`
+	ToolUseID string `json:"tool_use_id"`
 }
 
 type DeploymentResult struct {
@@ -32,6 +51,7 @@ type DeploymentResult struct {
 
 type Project struct {
 	ID              string                 `json:"id"`
+	UserID          string                 `json:"user_id,omitempty"`
 	Name            string                 `json:"name"`
 	Answers         map[string]interface{} `json:"answers"`
 	Status          ProjectStatus          `json:"status"`
@@ -93,6 +113,21 @@ func (ps *ProjectStore) GetAll() []*Project {
 	defer ps.mu.RUnlock()
 	out := make([]*Project, 0, len(ps.projects))
 	for _, p := range ps.projects {
+		cp := *p
+		out = append(out, &cp)
+	}
+	return out
+}
+
+// GetByUserID returns copies of all projects associated with the given user.
+func (ps *ProjectStore) GetByUserID(userID string) []*Project {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	out := make([]*Project, 0)
+	for _, p := range ps.projects {
+		if p.UserID != userID {
+			continue
+		}
 		cp := *p
 		out = append(out, &cp)
 	}

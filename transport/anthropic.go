@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
@@ -39,12 +40,14 @@ func (p *AnthropicProvider) GetProviderName() string {
 }
 
 func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
+	log.Printf("[anthropic] incoming user message: %s", truncateForLog(userMessage, 400))
 	c.AddUserMessage(userMessage)
 
 	agentInstructions := llmprotocol.GetAgentInstructions(ag)
 	availableTools := llmprotocol.ExtractTools(ag)
 	formattedTools := p.buildTools(availableTools, ag)
 	messages := p.buildMessages(c)
+	log.Printf("[anthropic] built %d message(s) for request", len(messages))
 
 	requestBody := map[string]interface{}{
 		"model":       p.Model,
@@ -67,9 +70,10 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 	if err != nil {
 		return err
 	}
+	log.Printf("[anthropic] parsed response stop_reason=%s text=%s tool=%s tool_use_id=%s", stopReason, truncateForLog(responseText, 400), toolName, toolCallID)
 
 	toolsProcessed := false
-	for stopReason == "tool_use" && toolName != "" {
+	for toolName != "" {
 		toolsProcessed = true
 
 		currentToolCallID := toolCallID
@@ -92,7 +96,7 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 			return fmt.Errorf("tool %s not available; enable infra generation in config", currentToolName)
 		}
 
-		toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
+		toolResult, isError := llmprotocol.ExecuteTool(ag, c, &chat.ToolCall{
 			ServerID:   toolInfo.ServerID,
 			ToolID:     currentToolName,
 			Handler:    toolInfo.Handler,
@@ -107,7 +111,7 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 				truncatetoolparams[k] = v
 			}
 		}
-		fmt.Println("Calling tool:", currentToolName, "with params:", truncatetoolparams)
+		log.Printf("[anthropic] executing tool: name=%s server=%s handler=%s params=%s", currentToolName, toolInfo.ServerID, toolInfo.Handler, jsonString(truncatetoolparams))
 
 		// Build the completed tool cycle message
 		toolMsg := chat.Message{
@@ -134,6 +138,7 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 		}
 
 		messages = p.buildMessages(c)
+		log.Printf("[anthropic] rebuilt %d message(s) after tool execution", len(messages))
 
 		messages = append(messages, map[string]interface{}{
 			"role": "assistant",
@@ -168,6 +173,10 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 		responseText, toolCallID, toolName, toolParams, stopReason, err = p.parseResponse(response)
 		if err != nil {
 			return err
+		}
+
+		if stopReason == "max_tokens" {
+			log.Printf("[anthropic] follow-up response ended at max_tokens but included a tool call; continuing tool execution")
 		}
 
 		// Save to chat history after callback so history is consistent
@@ -283,6 +292,7 @@ func (p *AnthropicProvider) sendHTTPRequest(requestBody map[string]interface{}) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	log.Printf("[anthropic] sending HTTP request (%d bytes)", len(jsonData))
 
 	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -306,6 +316,7 @@ func (p *AnthropicProvider) sendHTTPRequest(requestBody map[string]interface{}) 
 	}
 
 	if resp.StatusCode != 200 {
+		log.Printf("[anthropic] API error status=%d body=%s", resp.StatusCode, truncateForLog(string(body), 1000))
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -352,4 +363,19 @@ func isServerGenerationToolAnthropic(name string) bool {
 
 func isInfraGenerationToolAnthropic(name string) bool {
 	return infrageneration.IsInfraGenerationTool(name)
+}
+
+func truncateForLog(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "..."
+}
+
+func jsonString(value interface{}) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("<json marshal error: %v>", err)
+	}
+	return string(data)
 }

@@ -13,6 +13,11 @@ func GetAgentInstructions(ag *agent.Agent) string {
 	details := ag.GetAgentDetails(ag)
 	prompt := fmt.Sprintf("You are %s. %s\n\nYou have access to %d tools across %d servers.",
 		details.AgentID, details.Description, details.ToolCount, details.ServerCount)
+	prompt += "\n\nRESPONSE FORMAT:\n"
+	prompt += "- Respond in clear markdown so the chat UI can render your message cleanly.\n"
+	prompt += "- Use fenced code blocks for Terraform and any other code snippets.\n"
+	prompt += "- Use headings, bullets, and short paragraphs when they improve readability.\n"
+	prompt += "- Do not wrap normal responses in custom XML-like tags or special block markers.\n"
 
 	if ag.ServerGeneration {
 		prompt += "\n\nSERVER GENERATION CAPABILITY ENABLED:\n"
@@ -31,7 +36,9 @@ func GetAgentInstructions(ag *agent.Agent) string {
 	if ag.InfraGeneration {
 		prompt += "\n\nINFRA GENERATION CAPABILITY ENABLED:\n"
 		prompt += "You can run the AWS preview workflow with the infrageneration tools.\n"
-		prompt += "- Workflow: collect_aws_requirements → collect_aws_credentials → generate_aws_terraform_iteration → validate_aws_terraform_iteration → deploy_aws_terraform_iteration\n"
+		prompt += "- Workflow: collect_aws_requirements → collect_aws_credentials → generate_aws_terraform_iteration → validate_aws_terraform_iteration → deploy_aws_terraform_iteration → save_project_session\n"
+		prompt += "- After a successful deployment, ask the user if they want to save the project session. If they agree, call save_project_session using their email as user_id.\n"
+		prompt += "- The backend already stores the chat history from the live conversation, so the save call only needs the user id, project id, project name, and final Terraform script.\n"
 		prompt += "- The deploy stage is currently a preview stub and returns true without making cloud changes\n"
 		prompt += fmt.Sprintf("- Available tools: %s, %s, %s, %s, %s\n",
 			infrageneration.ToolCollectAWSRequirements,
@@ -40,6 +47,7 @@ func GetAgentInstructions(ag *agent.Agent) string {
 			infrageneration.ToolValidateAWSTerraform,
 			infrageneration.ToolDeployAWSTerraform,
 		)
+		prompt += fmt.Sprintf("- Save tool: %s\n", infrageneration.ToolSaveProjectSession)
 	}
 
 	return prompt

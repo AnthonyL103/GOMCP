@@ -125,7 +125,7 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 			}
 
 			// Execute the tool
-			toolResult, isError := llmprotocol.ExecuteTool(ag, &chat.ToolCall{
+			toolResult, isError := llmprotocol.ExecuteTool(ag, c, &chat.ToolCall{
 				ServerID:   toolInfo.ServerID,
 				ToolID:     currentToolName,
 				Handler:    toolInfo.Handler,

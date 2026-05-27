@@ -1,272 +1,137 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { LuSendHorizontal } from "react-icons/lu";
-import {
-  getProjectWsUrl,
-  postMessage,
-  deployProject,
-  type Project,
-} from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import ChatPanel from "../components/ChatPanel";
+import { connectToolStream, createChatSessionId, getCurrentUserId, sendChatPrompt, type Message } from "../api";
+
+type ChatLocationState = {
+  sessionId?: string;
+  initialPrompt?: string;
+  projectName?: string;
+};
+
+const EMPTY_MESSAGE = (role: "user" | "assistant", content: string): Message => ({
+  role,
+  content,
+  timestamp: new Date().toISOString(),
+});
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const state = (location.state ?? {}) as ChatLocationState;
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [deploying, setDeploying] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const sessionId = useMemo(() => state.sessionId ?? id ?? createChatSessionId(), [state.sessionId, id]);
+  const storageKey = `gomcp-chat:${sessionId}`;
 
-  // Auto-scroll to bottom whenever messages change.
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null | undefined>(undefined);
+  const didStartRef = useRef(false);
+
+  const initialPrompt = state.initialPrompt ?? sessionStorage.getItem(storageKey) ?? "";
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [project?.messages]);
+    const disconnect = connectToolStream((message) => {
+      setMessages((current) => [...current, message]);
+    });
 
-  // Auto-resize textarea.
+    return disconnect;
+  }, []);
+
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  }, [input]);
+    void (async () => {
+      const currentUserId = await getCurrentUserId();
+      setUserId(currentUserId);
+    })();
+  }, []);
 
-  // Connect to the project's WebSocket on mount. The backend pushes the full
-  // Project JSON blob on every mutation (new message, status change, deployment).
   useEffect(() => {
-    if (!id) return;
+    if (userId === undefined) return;
+    if (!initialPrompt || didStartRef.current) return;
+    didStartRef.current = true;
+    sessionStorage.setItem(storageKey, initialPrompt);
 
-    let ws: WebSocket | null = null;
-    let cancelled = false;
+    setMessages([EMPTY_MESSAGE("user", initialPrompt)]);
+    setIsBootstrapping(true);
+    setError(null);
 
-    async function connect() {
+    void (async () => {
       try {
-        const url = await getProjectWsUrl(id!);
-        if (cancelled) return;
-
-        ws = new WebSocket(url);
-        wsRef.current = ws;
-
-        ws.onmessage = (e) => {
-          try {
-            setProject(JSON.parse(e.data as string) as Project);
-            setLoadError(null);
-          } catch {
-            // ignore malformed frames
-          }
-        };
-
-        ws.onerror = () => {
-          if (!cancelled) setLoadError("Connection error — please refresh.");
-        };
-
-        ws.onclose = (ev) => {
-          if (!cancelled && ev.code !== 1000) {
-            setLoadError("Connection closed — please refresh.");
-          }
-        };
+        const reply = await sendChatPrompt(initialPrompt, { sessionId, userId: userId ?? undefined });
+        setMessages((current) => [...current, reply]);
       } catch (err: unknown) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Failed to connect");
-        }
+        setError(err instanceof Error ? err.message : "Failed to start chat");
+      } finally {
+        setIsBootstrapping(false);
       }
-    }
+    })();
+  }, [initialPrompt, sessionId, storageKey, userId]);
 
-    void connect();
+  async function handleSend(message: string) {
+    if (isSending) return;
+    setError(null);
+    setIsSending(true);
+    setMessages((current) => [...current, EMPTY_MESSAGE("user", message)]);
 
-    return () => {
-      cancelled = true;
-      ws?.close(1000);
-      wsRef.current = null;
-    };
-  }, [id]);
-
-  async function handleSend() {
-    const trimmed = input.trim();
-    if (!trimmed || sending || project?.status === "generating") return;
-    setActionError(null);
-    setInput("");
-    setSending(true);
     try {
-      await postMessage(id!, trimmed);
-      // Optimistically add the user message; WebSocket will push the response.
-      setProject((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "generating",
-              messages: [
-                ...prev.messages,
-                { role: "user", content: trimmed, created_at: new Date().toISOString() },
-              ],
-            }
-          : prev,
-      );
+      const reply = await sendChatPrompt(message, { sessionId, userId: userId ?? undefined });
+      setMessages((current) => [...current, reply]);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "Failed to send message");
+      setMessages((current) => [
+        ...current,
+        EMPTY_MESSAGE("assistant", err instanceof Error ? err.message : "Failed to send message"),
+      ]);
+      setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
-      setSending(false);
+      setIsSending(false);
+      setIsBootstrapping(false);
     }
   }
 
-  async function handleDeploy() {
-    if (deploying) return;
-    setActionError(null);
-    setDeploying(true);
-    try {
-      await deployProject(id!);
-      // WebSocket will push the updated project with deployment result.
-    } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : "Deployment request failed");
-    } finally {
-      setDeploying(false);
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  }
-
-  const isGenerating = project?.status === "generating";
-  const isComplete = project?.status === "complete";
-  const inputDisabled = sending || isGenerating || !project;
-
-  // ---- Loading / error state ----
-  if (!project && !loadError) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted" />
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:150ms]" />
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:300ms]" />
-        </div>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-red-500">{loadError}</p>
-      </div>
-    );
+  function handleReset() {
+    sessionStorage.removeItem(storageKey);
+    void navigate("/projects/new");
   }
 
   return (
-    <>
-      {/* Script-ready banner */}
-      {isComplete && (
-        <div className="flex items-center justify-between border-b border-border bg-surface-raised px-6 py-3">
-          <span className="text-sm font-medium text-green-700">
-            ✓ Terraform script is ready
-          </span>
-          {!project?.deployment && (
-            <button
-              onClick={() => void handleDeploy()}
-              disabled={deploying}
-              aria-label="Deploy Terraform script"
-              className="rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {deploying ? "Deploying…" : "Deploy"}
-            </button>
-          )}
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      {error && (
+        <div className="border-b border-red-500/20 bg-red-500/5 px-4 py-2 text-sm text-red-500">
+          {error}
         </div>
       )}
 
-      {/* Message thread */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
-          {project?.messages.map((msg, i) => (
-            <div key={i}>
-              {msg.role === "user" ? (
-                <div className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl bg-bubble px-4 py-3 text-ink whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] text-ink leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* Generation in-progress indicator */}
-          {isGenerating && (
-            <div className="flex justify-start">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted" />
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:150ms]" />
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-muted [animation-delay:300ms]" />
-              </div>
-            </div>
-          )}
-
-          {/* Deployment result */}
-          {project?.deployment && (
-            <div className="rounded-xl border border-border bg-surface-raised p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                {project.deployment.status === "success" ? (
-                  <span className="text-sm font-medium text-green-700">✓ Deployment succeeded</span>
-                ) : (
-                  <span className="text-sm font-medium text-red-600">✗ Deployment failed</span>
-                )}
-                <span className="text-xs text-ink-muted">
-                  {new Date(project.deployment.timestamp).toLocaleString()}
-                </span>
-              </div>
-              <pre className="overflow-x-auto rounded-lg bg-bg p-3 text-xs text-ink leading-relaxed whitespace-pre">
-                {project.deployment.output}
-              </pre>
-            </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
+      <div className="flex-1 overflow-hidden">
+        <ChatPanel
+          title={state.projectName ? `${state.projectName} chat` : `Chat session ${sessionId.slice(0, 8)}`}
+          subtitle="The agent responds in markdown and tool output arrives live over the websocket."
+          messages={messages}
+          isBootstrapping={isBootstrapping}
+          isSending={isSending}
+          onSend={handleSend}
+        />
       </div>
 
-      {/* Input area */}
-      <div className="px-4 pb-4">
-        <div className="mx-auto max-w-3xl">
-          {actionError && (
-            <div className="mb-2 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-600">
-              {actionError}
-            </div>
-          )}
-          <div className="rounded-2xl border border-border bg-surface-raised shadow-sm transition-shadow focus-within:shadow-md">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={inputDisabled}
-              placeholder={isGenerating ? "Generating…" : "Send a follow-up message"}
-              rows={1}
-              className="w-full resize-none bg-transparent px-5 pt-4 pb-3 text-base text-ink placeholder-ink-muted outline-none disabled:opacity-50"
-            />
-            <div className="flex items-center justify-end px-3 pb-3">
-              <button
-                onClick={() => void handleSend()}
-                disabled={inputDisabled || !input.trim()}
-                aria-label="Send message"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white transition-colors hover:bg-brand-hover disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <LuSendHorizontal className="h-4 w-4" />
-              </button>
-            </div>
+      {!initialPrompt && messages.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+          <div className="rounded-2xl border border-border bg-surface-raised px-6 py-5 text-center shadow-lg">
+            <h2 className="text-base font-semibold text-ink">No project prompt found</h2>
+            <p className="mt-1 text-sm text-ink-secondary">
+              Start a new project to generate the initial chat prompt.
+            </p>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+            >
+              Create a project
+            </button>
           </div>
         </div>
-      </div>
-    </>
+      )}
+    </div>
   );
 }
-

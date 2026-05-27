@@ -1,132 +1,198 @@
-import { fetchAuthSession } from "aws-amplify/auth";
+import { fetchAuthSession, getCurrentUser } from "aws-amplify/auth";
 
 // Base URL comes from the Vite env var; falls back to localhost for local dev.
-const API_BASE =
+export const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
-// ---------------------------------------------------------------------------
-// Types — mirror the Go store.Project struct (snake_case JSON tags)
-// ---------------------------------------------------------------------------
+export const WS_URL = API_URL.replace(/^http/, "ws");
 
-export interface ChatMessage {
+// -------------------------------------------------------------------
+// Go backend types (mirrors chat package)
+// -------------------------------------------------------------------
+
+export interface ToolCall {
+  server_id: string;
+  tool_id: string;
+  handler: string;
+  parameters: Record<string, unknown>;
+  reasoning: string;
+  tool_use_id: string;
+}
+
+export interface ToolResult {
+  server_id: string;
+  tool_id: string;
+  content: string;
+  is_error: boolean;
+  tool_use_id: string;
+}
+
+export interface Message {
   role: "user" | "assistant";
   content: string;
-  created_at: string;
+  timestamp: string;
+  tool_call?: ToolCall;
+  tool_result?: ToolResult;
 }
 
 export interface DeploymentResult {
-  status: "success" | "failure";
+  status: string;
   output: string;
   timestamp: string;
 }
 
 export interface Project {
   id: string;
+  user_id?: string;
   name: string;
-  answers: Record<string, string>;
-  status: "pending" | "generating" | "complete" | "failed";
-  messages: ChatMessage[];
+  answers: Record<string, unknown>;
+  status: string;
+  messages: Message[];
   terraform_script?: string;
   deployment?: DeploymentResult;
   created_at: string;
   updated_at: string;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.idToken?.toString();
-  if (!token) throw new Error("Not authenticated");
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  };
+export interface ChatRequestContext {
+  sessionId: string;
+  userId?: string;
 }
 
-async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
+// -------------------------------------------------------------------
+// Project prompt helpers
+// -------------------------------------------------------------------
+
+export interface ProjectAnswers {
+  name: string;
+  description: string;
+  projectType: string;
+  dataStorage: string;
+  background: string;
+  audience: string;
+  usage: string;
+  reliability: string;
+  sensitiveData: string;
+  location: string;
+  domain: string;
+}
+
+const ANSWER_LABELS: Record<keyof ProjectAnswers, string> = {
+  name: "Project name",
+  description: "Description",
+  projectType: "Project type",
+  dataStorage: "Data storage",
+  background: "Background tasks",
+  audience: "Audience",
+  usage: "Expected usage",
+  reliability: "Reliability needs",
+  sensitiveData: "Sensitive data",
+  location: "User location",
+  domain: "Domain",
+};
+
+export function buildProjectPrompt(answers: ProjectAnswers): string {
+  const lines = Object.entries(answers)
+    .filter(([, value]) => value.trim() !== "")
+    .map(([key, value]) => `- ${ANSWER_LABELS[key as keyof ProjectAnswers]}: ${value}`);
+
+  return [
+    "Here is the user project request:",
+    "",
+    ...lines,
+    "",
+    "Please help the user design and implement this project. Start by explaining the plan and ask follow-up questions if needed. Return markdown when useful, and include terraform code blocks when you are ready to propose infrastructure.",
+  ].join("\n");
+}
+
+export function createChatSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `chat-${Date.now()}`;
+}
+
+export async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const user = await getCurrentUser();
+    return user.username?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const session = await fetchAuthSession();
+    return session.tokens?.idToken?.toString() ?? session.tokens?.accessToken?.toString() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function authorizedHeaders(): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function buildChatRequestBody(message: string, context?: ChatRequestContext): Record<string, unknown> {
+  const body: Record<string, unknown> = { message };
+  if (context?.sessionId) body.session_id = context.sessionId;
+  if (context?.userId) body.user_id = context.userId;
+  return body;
+}
+
+// -------------------------------------------------------------------
+// Chat REST + WS
+// -------------------------------------------------------------------
+
+export async function sendChatPrompt(message: string, context?: ChatRequestContext): Promise<Message> {
+  const res = await fetch(`${API_URL}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildChatRequestBody(message, context)),
   });
 
-  if (res.status === 401) {
-    // Token missing or expired — send the user back to login.
-    window.location.href = "/login";
-    throw new Error("Session expired. Redirecting to login…");
-  }
+  
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    let message = text;
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  return res.json() as Promise<Message>;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const headers = await authorizedHeaders();
+  const res = await fetch(`${API_URL}/projects`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed (${res.status})`);
+  }
+
+  return res.json() as Promise<Project[]>;
+}
+
+export function connectToolStream(onMessage: (msg: Message) => void): () => void {
+  const ws = new WebSocket(`${WS_URL}/ws`);
+
+  ws.onmessage = (event) => {
     try {
-      message = (JSON.parse(text) as { error?: string }).error ?? text;
+      onMessage(JSON.parse(event.data as string) as Message);
+      console.log("Received message from tool stream:", event.data);
     } catch {
-      // keep raw text as the message
+      // ignore malformed frames
     }
-    throw new Error(message || `Request failed (${res.status})`);
-  }
+  };
 
-  return res.json() as Promise<T>;
-}
-
-// Variant for endpoints that return plain text (e.g. the Terraform artifact).
-async function apiRequestText(path: string): Promise<string> {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}${path}`, { headers });
-  if (res.status === 401) {
-    window.location.href = "/login";
-    throw new Error("Session expired");
-  }
-  if (!res.ok) throw new Error(`Request failed (${res.status})`);
-  return res.text();
-}
-
-// ---------------------------------------------------------------------------
-// Public API functions
-// ---------------------------------------------------------------------------
-
-export function createProject(
-  answers: Record<string, string>,
-): Promise<{ id: string }> {
-  return apiRequest("/projects", {
-    method: "POST",
-    body: JSON.stringify({ answers }),
-  });
-}
-
-export function listProjects(): Promise<Project[]> {
-  return apiRequest<Project[]>("/projects");
-}
-
-export function getProject(id: string): Promise<Project> {
-  return apiRequest<Project>(`/projects/${id}`);
-}
-
-export function postMessage(projectId: string, content: string): Promise<void> {
-  return apiRequest<void>(`/projects/${projectId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ content }),
-  });
-}
-
-export function getArtifact(projectId: string): Promise<string> {
-  return apiRequestText(`/projects/${projectId}/artifact`);
-}
-
-export function deployProject(projectId: string): Promise<void> {
-  return apiRequest<void>(`/projects/${projectId}/deploy`, { method: "POST" });
-}
-
-// Returns an authenticated WebSocket URL for the project's live-update stream.
-// Browsers cannot send custom headers on WS upgrades, so the JWT is passed as
-// a query parameter instead.
-export async function getProjectWsUrl(projectId: string): Promise<string> {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.idToken?.toString() ?? "";
-  const wsBase = API_BASE.replace(/^http/, "ws"); // http→ws, https→wss
-  return `${wsBase}/projects/${projectId}/ws?token=${encodeURIComponent(token)}`;
+  return () => ws.close();
 }
