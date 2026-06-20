@@ -18,7 +18,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
 		if allowedOrigin == "" {
-			allowedOrigin = "http://localhost:5174"
+			allowedOrigin = "http://localhost:5173"
 		}
 
 		if vulnMode() {
@@ -98,6 +98,8 @@ func main() {
 		provider: provider,
 		chat:     chat.NewChat("session-1", 50),
 		hub:      hub,
+		store:    projectStore,
+		sessions: NewSessionManager(50),
 	}
 
 	if ag.VoiceChat {
@@ -111,7 +113,7 @@ func main() {
 	mux.HandleFunc("/done", srv.handleDone)
 	mux.HandleFunc("/api/chat/session", demoHandler.handleChatSession)
 	mux.HandleFunc("/api/chat/message", demoHandler.handleChatMessage)
-	mux.Handle("/", webHandler(projectStore))
+	mux.Handle("/", webHandler(projectStore, hub))
 
 	log.Println("Listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", corsMiddleware(mux)))

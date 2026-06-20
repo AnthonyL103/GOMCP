@@ -7,11 +7,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
+	"github.com/AnthonyL103/GOMCP/store"
 	"github.com/AnthonyL103/GOMCP/transport"
 	"github.com/gorilla/websocket"
 )
@@ -87,6 +91,8 @@ type Server struct {
 	provider transport.Provider
 	chat     *chat.Chat
 	hub      *Hub
+	store    *store.ProjectStore
+	sessions *SessionManager
 }
 
 // POST /chat — same logic as the CLI loop, just over HTTP
@@ -97,22 +103,39 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Message string `json:"message"`
+		Message   string `json:"message"`
+		SessionID string `json:"session_id"`
+		UserID    string `json:"user_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 
-	if err := s.provider.SendRequest(s.chat, s.ag, body.Message); err != nil {
+	if body.SessionID == "" {
+		body.SessionID = "session-1"
+	}
+
+	userEmail := strings.TrimSpace(body.UserID)
+	if userEmail != "" {
+		log.Printf("Authenticated Cognito user email for chat request: %s", userEmail)
+	}
+
+	c := s.loadStoredChat(body.SessionID)
+	continuationContext := ""
+	if proj, ok := s.store.Get(body.SessionID); ok && len(proj.Messages) > 0 {
+		continuationContext = buildContinuationContext(proj)
+	}
+
+	if err := s.provider.SendRequest(c, s.ag, body.Message, userEmail, continuationContext); err != nil {
 		log.Printf("Error: %v", err)
 		s.hub.Broadcast(map[string]string{"type": "error", "message": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	messages := s.chat.GetMessages()
-	log.Printf("Chat request complete, total messages: %d", len(messages))
+	messages := c.GetMessages()
+	log.Printf("Chat request complete for session %s, total messages: %d", body.SessionID, len(messages))
 
 	if len(messages) == 0 {
 		http.Error(w, "no response", http.StatusInternalServerError)
@@ -121,8 +144,228 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	lastMsg := messages[len(messages)-1]
 
+	// Persist chat and extract terraform script as needed.
+	go s.persistChat(body.SessionID, userEmail, c)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(lastMsg)
+}
+
+// persistChat synchronises the in-memory chat with the ProjectStore and
+// extracts any Terraform script present in the conversation.
+func (s *Server) persistChat(sessionID, userID string, c *chat.Chat) {
+	if s.store == nil {
+		return
+	}
+
+	// Load existing project if present
+	proj, ok := s.store.Get(sessionID)
+	isNew := !ok
+	if isNew {
+		proj = &store.Project{
+			ID:        sessionID,
+			UserID:    userID,
+			Name:      deriveName(c, sessionID),
+			Status:    store.StatusGenerating,
+			CreatedAt: time.Now(),
+		}
+	}
+	if userID != "" {
+		proj.UserID = userID
+	}
+
+	proj.Messages = toStoreMessages(c.GetMessages())
+
+	script := extractTerraformScript(c.GetMessages())
+	hadScript := proj.TerraformScript != ""
+	if script != "" {
+		proj.TerraformScript = script
+		proj.Status = store.StatusComplete
+	}
+
+	if isNew {
+		proj.CreatedAt = time.Now()
+		proj.UpdatedAt = time.Now()
+		_ = s.store.Create(proj)
+	} else {
+		proj.UpdatedAt = time.Now()
+		_ = s.store.Update(proj)
+	}
+
+	if script != "" {
+		_ = os.WriteFile(s.store.ArtifactPath(sessionID), []byte(script), 0644)
+	}
+
+	if script != "" && !hadScript {
+		if s.hub != nil {
+			s.hub.Broadcast(map[string]string{"type": "script_ready", "session_id": sessionID, "project_id": sessionID})
+		}
+	}
+}
+
+func toStoreMessages(msgs []chat.Message) []store.ChatMessage {
+	out := make([]store.ChatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		var toolCall *store.ToolCall
+		if m.ToolCall != nil {
+			toolCall = &store.ToolCall{
+				ServerID:   m.ToolCall.ServerID,
+				ToolID:     m.ToolCall.ToolID,
+				Handler:    m.ToolCall.Handler,
+				Parameters: m.ToolCall.Parameters,
+				Reasoning:  m.ToolCall.Reasoning,
+				ToolUseID:  m.ToolCall.ToolUseID,
+			}
+		}
+
+		var toolResult *store.ToolResult
+		if m.ToolResult != nil {
+			toolResult = &store.ToolResult{
+				ServerID:  m.ToolResult.ServerID,
+				ToolID:    m.ToolResult.ToolID,
+				Content:   m.ToolResult.Content,
+				IsError:   m.ToolResult.IsError,
+				ToolUseID: m.ToolResult.ToolUseID,
+			}
+		}
+
+		out = append(out, store.ChatMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			CreatedAt:  m.Timestamp,
+			ToolCall:   toolCall,
+			ToolResult: toolResult,
+		})
+	}
+	return out
+}
+
+func buildContinuationContext(proj *store.Project) string {
+	if proj == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("This chat is a continuation of an existing saved project.")
+	if strings.TrimSpace(proj.Name) != "" {
+		sb.WriteString("\nProject name: ")
+		sb.WriteString(proj.Name)
+	}
+	if strings.TrimSpace(proj.ID) != "" {
+		sb.WriteString("\nProject ID: ")
+		sb.WriteString(proj.ID)
+	}
+	sb.WriteString("\nProject status: ")
+	sb.WriteString(string(proj.Status))
+
+	if len(proj.Messages) > 0 {
+		sb.WriteString("\n\nRecent chat transcript:")
+		start := 0
+		if len(proj.Messages) > 16 {
+			start = len(proj.Messages) - 16
+		}
+		for _, msg := range proj.Messages[start:] {
+			content := strings.TrimSpace(msg.Content)
+			if content == "" {
+				continue
+			}
+			sb.WriteString("\n")
+			if msg.Role == "assistant" {
+				sb.WriteString("Assistant: ")
+			} else {
+				sb.WriteString("User: ")
+			}
+			sb.WriteString(content)
+		}
+	}
+
+	if strings.TrimSpace(proj.TerraformScript) != "" {
+		sb.WriteString("\n\nCurrent Terraform script:\n")
+		sb.WriteString(proj.TerraformScript)
+	}
+
+	return sb.String()
+}
+
+func deriveName(c *chat.Chat, sessionID string) string {
+	msgs := c.GetMessages()
+	for _, m := range msgs {
+		if m.Role == "user" {
+			// look for a line like "Project name: NAME"
+			lines := strings.Split(m.Content, "\n")
+			for _, l := range lines {
+				if strings.Contains(strings.ToLower(l), "project name:") {
+					parts := strings.SplitN(l, ":", 2)
+					if len(parts) == 2 {
+						name := strings.TrimSpace(parts[1])
+						if name != "" {
+							return name
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(sessionID) >= 8 {
+		return "Project " + sessionID[:8]
+	}
+	return "Project " + sessionID
+}
+
+var fencedRe = regexp.MustCompile("(?s)```(?:hcl|terraform|tf)\\n(.*?)```")
+
+func extractTerraformScript(msgs []chat.Message) string {
+	// newest-first
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		if m.ToolCall != nil {
+			if m.ToolCall.ToolID == "save_project_session" {
+				if v, ok := m.ToolCall.Parameters["terraform_script"].(string); ok && strings.TrimSpace(v) != "" {
+					return v
+				}
+			}
+			if m.ToolCall.ToolID == "generate_aws_terraform_iteration" {
+				if v, ok := m.ToolCall.Parameters["terraform"].(string); ok && strings.TrimSpace(v) != "" {
+					return v
+				}
+			}
+		}
+		if m.ToolResult != nil {
+			if strings.TrimSpace(m.ToolResult.Content) != "" {
+				if script := extractAllFencedTerraformBlocks(m.ToolResult.Content); strings.TrimSpace(script) != "" {
+					return script
+				}
+			}
+		}
+		// assistant's content
+		if m.Role == "assistant" {
+			if script := extractAllFencedTerraformBlocks(m.Content); strings.TrimSpace(script) != "" {
+				return script
+			}
+		}
+	}
+	return ""
+}
+
+func extractAllFencedTerraformBlocks(content string) string {
+	matches := fencedRe.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		block := strings.TrimSpace(match[1])
+		if block == "" {
+			continue
+		}
+		parts = append(parts, block)
+	}
+
+	return strings.Join(parts, "\n\n")
 }
 
 // GET /ws — clients connect here to receive tool update broadcasts

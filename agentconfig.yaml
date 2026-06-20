@@ -5,6 +5,7 @@ agents:
       model: claude-opus-4-5-20251101 
       temperature: 0.7
       max_tokens: 3000
+      api_key: sk-ant-api03-Io-Wx_2Fa2_5RqpH5Jruc6VMH_JfDNLPYnjIkGHOrqKxAPpoNXEDsogpx8BfZBlFjVS1q_p7CKwZJP4aiLHZA-K6c2lQAA
     servers:
       - 'C:\Users\antho\GoMCP\serverconfigs\server2config.yaml'
     server_generation: true

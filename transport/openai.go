@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
@@ -38,12 +39,15 @@ func (p *OpenAIProvider) GetProviderName() string {
 	return "openai"
 }
 
-func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
+func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string, userEmail string, continuationContext string) error {
 	// Add user message to chat
 	c.AddUserMessage(userMessage)
 
 	// Extract agent instructions
-	agentInstructions := llmprotocol.GetAgentInstructions(ag)
+	agentInstructions := llmprotocol.GetAgentInstructions(ag, userEmail)
+	if strings.TrimSpace(continuationContext) != "" {
+		agentInstructions += "\n\nPAST CHAT CONTEXT:\n" + strings.TrimSpace(continuationContext)
+	}
 
 	// Extract and format tools
 	availableTools := llmprotocol.ExtractTools(ag)

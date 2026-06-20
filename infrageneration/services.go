@@ -3,8 +3,6 @@ package infrageneration
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,7 +54,7 @@ func ValidateAWSTerraformTool(ag *agent.Agent, params map[string]interface{}) (s
 func DeployAWSTerraformTool(ag *agent.Agent, params map[string]interface{}) (string, bool) {
 	_ = ag
 	_ = params
-	return "true", false
+	return "Deploy step acknowledged. This workflow is currently a preview stub: it validates the generated Terraform, mirrors progress, and does not make AWS changes.", false
 }
 
 func SaveProjectSession(ag *agent.Agent, c *chat.Chat, params map[string]interface{}) (string, bool) {
@@ -94,21 +92,9 @@ func SaveProjectSession(ag *agent.Agent, c *chat.Chat, params map[string]interfa
 		project.Status = store.ProjectStatus(status)
 	}
 
-	if err := os.MkdirAll(filepath.Join("data", "projects"), 0755); err != nil {
-		return fmt.Sprintf("failed to create projects directory: %v", err), true
-	}
-
-	fileName := fmt.Sprintf("%s__%s.json", sanitizeFileComponent(userID), sanitizeFileComponent(projectID))
-	projectPath := filepath.Join("data", "projects", fileName)
-	data, err := json.MarshalIndent(project, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("failed to marshal project session: %v", err), true
-	}
-	if err := os.WriteFile(projectPath, data, 0644); err != nil {
-		return fmt.Sprintf("failed to save project session: %v", err), true
-	}
-
-	return fmt.Sprintf("saved project session for %s at %s", userID, projectPath), false
+	// Persistence is now owned by the central ProjectStore; this tool
+	// should not write files directly to avoid conflicting filenames.
+	return fmt.Sprintf("acknowledged project session for %s (id=%s)", userID, projectID), false
 }
 
 func formatInfraStagePreview(stageName, summary string, params map[string]interface{}, nextStep string) string {
