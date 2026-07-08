@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
@@ -40,14 +39,12 @@ func (p *AnthropicProvider) GetProviderName() string {
 	return "anthropic"
 }
 
-func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string, userEmail string, continuationContext string) error {
+func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
 	log.Printf("[anthropic] incoming user message: %s", truncateForLog(userMessage, 400))
 	c.AddUserMessage(userMessage)
 
-	agentInstructions := llmprotocol.GetAgentInstructions(ag, userEmail)
-	if strings.TrimSpace(continuationContext) != "" {
-		agentInstructions += "\n\nPAST CHAT CONTEXT:\n" + strings.TrimSpace(continuationContext)
-	}
+	agentInstructions := llmprotocol.GetAgentInstructions(ag)
+
 	availableTools := llmprotocol.ExtractTools(ag)
 	formattedTools := p.buildTools(availableTools, ag)
 	messages := p.buildMessages(c)
@@ -74,7 +71,6 @@ func (p *AnthropicProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessa
 	if err != nil {
 		return err
 	}
-	log.Printf("[anthropic] parsed response stop_reason=%s text=%s tool=%s tool_use_id=%s", stopReason, truncateForLog(responseText, 400), toolName, toolCallID)
 
 	toolsProcessed := false
 	for toolName != "" {

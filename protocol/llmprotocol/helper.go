@@ -3,24 +3,23 @@ package llmprotocol
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/infrageneration"
 )
 
 // GetAgentInstructions builds the system prompt for the LLM
-func GetAgentInstructions(ag *agent.Agent, userEmail string) string {
+func GetAgentInstructions(ag *agent.Agent) string {
 	details := ag.GetAgentDetails(ag)
 	prompt := fmt.Sprintf("You are %s. %s\n\nYou have access to %d tools across %d servers.",
 		details.AgentID, details.Description, details.ToolCount, details.ServerCount)
-	prompt += "\n\nRESPONSE FORMAT:\n"
-	prompt += "- Respond in clear markdown so the chat UI can render your message cleanly.\n"
-	prompt += "- Use fenced code blocks for Terraform and any other code snippets.\n"
-	prompt += "- Use headings, bullets, and short paragraphs when they improve readability.\n"
-	prompt += "- Do not wrap normal responses in custom XML-like tags or special block markers.\n"
-	if trimmedEmail := strings.TrimSpace(userEmail); trimmedEmail != "" {
-		prompt += fmt.Sprintf("\n\nAUTHENTICATED USER CONTEXT:\n- Current Cognito email: %s\n- Use this email as the default user_id for save_project_session. Do not ask the user to re-enter it unless the value is missing.\n", trimmedEmail)
+
+	if ag.ApiMode {
+		prompt += "\n\nRESPONSE FORMAT:\n"
+		prompt += "- Respond in clear markdown so the chat UI can render your message cleanly.\n"
+		prompt += "- Use fenced code blocks for Terraform and any other code snippets.\n"
+		prompt += "- Use headings, bullets, and short paragraphs when they improve readability.\n"
+		prompt += "- Do not wrap normal responses in custom XML-like tags or special block markers.\n"
 	}
 
 	if ag.ServerGeneration {

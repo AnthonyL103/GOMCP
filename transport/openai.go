@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	agent "github.com/AnthonyL103/GOMCP/Agent"
 	"github.com/AnthonyL103/GOMCP/chat"
@@ -39,15 +38,12 @@ func (p *OpenAIProvider) GetProviderName() string {
 	return "openai"
 }
 
-func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string, userEmail string, continuationContext string) error {
+func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage string) error {
 	// Add user message to chat
 	c.AddUserMessage(userMessage)
 
 	// Extract agent instructions
-	agentInstructions := llmprotocol.GetAgentInstructions(ag, userEmail)
-	if strings.TrimSpace(continuationContext) != "" {
-		agentInstructions += "\n\nPAST CHAT CONTEXT:\n" + strings.TrimSpace(continuationContext)
-	}
+	agentInstructions := llmprotocol.GetAgentInstructions(ag)
 
 	// Extract and format tools
 	availableTools := llmprotocol.ExtractTools(ag)
@@ -188,6 +184,7 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 	}
 
 	// Save final text response (whether tools were used or not)
+	//open ai tool flow returns final text response in the last assistant message, so we need to update the last message if tools were used
 	if responseText != "" {
 		if toolsProcessed {
 			// Update last message with final response text
@@ -202,12 +199,6 @@ func (p *OpenAIProvider) SendRequest(c *chat.Chat, ag *agent.Agent, userMessage 
 	}
 
 	return nil
-}
-
-type toolCallInfo struct {
-	ID        string
-	Name      string
-	Arguments map[string]interface{}
 }
 
 func (p *OpenAIProvider) buildMessages(c *chat.Chat, systemMessage string) []map[string]interface{} {

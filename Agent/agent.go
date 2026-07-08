@@ -34,6 +34,7 @@ type AgentDetails struct {
 	ServerGeneration bool
 	VoiceChat        bool
 	InfraGeneration  bool
+	ApiMode          bool
 }
 
 type LLMConfig struct {
@@ -51,9 +52,9 @@ type Agent struct {
 	ServerGeneration bool
 	VoiceChat        bool
 	InfraGeneration  bool
+	ApiMode          bool
 	Remote           bool
 	RemoteRoute      string
-	
 }
 
 // return list of valid models for the user
@@ -117,6 +118,7 @@ func NewAgent(
 	serverGeneration bool,
 	voiceChat bool,
 	infraGeneration bool,
+	apiMode bool,
 	remote bool,
 	remoteRoute string,
 
@@ -147,6 +149,7 @@ func NewAgent(
 		InfraGeneration:  infraGeneration, // default to false, can be set via config
 		Remote:           remote,
 		RemoteRoute:      remoteRoute,
+		ApiMode:          apiMode,
 	}
 }
 
@@ -179,5 +182,6 @@ func (a *Agent) GetAgentDetails(agent *Agent) *AgentDetails {
 		ServerGeneration: serverGeneration,
 		VoiceChat:        a.VoiceChat,
 		InfraGeneration:  a.InfraGeneration,
+		ApiMode:          a.ApiMode,
 	}
 }

@@ -26,6 +26,7 @@ type AgentDefinition struct {
 	ServerGeneration bool          `yaml:"server_generation"`
 	VoiceChat        bool          `yaml:"voice_chat"`
 	InfraGeneration  bool          `yaml:"infra_generation"`
+	ApiMode          bool          `yaml:"api_mode"`
 	Remote           bool          `yaml:"remote"`
 	RemoteRoute      string        `yaml:"remote_route"`
 }
@@ -109,6 +110,11 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.InfraGeneration = false
 	}
 
+	if !agentDef.ApiMode || !isBool(agentDef.ApiMode) {
+		fmt.Printf("API mode disabled or invalid for agent %s, defaulting to false\n", agentDef.AgentID)
+		agentDef.ApiMode = false
+	}
+
 	// Create agent using your NewAgent constructor
 	ag := agent.NewAgent(
 		agentDef.AgentID,
@@ -118,6 +124,7 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.ServerGeneration,
 		agentDef.VoiceChat,
 		agentDef.InfraGeneration,
+		agentDef.ApiMode,
 		agentDef.Remote,
 		agentDef.RemoteRoute,
 	)
