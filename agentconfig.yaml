@@ -5,11 +5,13 @@ agents:
       model: claude-opus-4-5-20251101 
       temperature: 0.7
       max_tokens: 3000
+      api_key: "sk-..."
     servers:
       - 'C:\Users\antho\GoMCP\serverconfigs\server2config.yaml'
     server_generation: false
     infra_generation: false
-    api_mode: false
+    api_mode: true
+    api_port: "8080"
 
     
 

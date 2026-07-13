@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+
 	"github.com/AnthonyL103/GOMCP/server"
 )
 
@@ -29,7 +30,7 @@ func (r *Registry) AddServer(srv *server.MCPServer) error {
 	return nil
 }
 
-// RemoveServer removes a server from the registry
+// RemoveServer removes a server from the registry for autogen
 func (r *Registry) RemoveServer(serverID string) error {
 	if _, exists := r.Servers[serverID]; !exists {
 		return fmt.Errorf("server with ID '%s' does not exist", serverID)
@@ -56,15 +57,3 @@ func (r *Registry) ListServers() []*server.MCPServer {
 	}
 	return servers
 }
-
-// ExecuteTool executes a tool from a specific server
-/*
-func (r *Registry) ExecuteTool(serverID, toolID string, input map[string]interface{}) (interface{}, error) {
-	srv, err := r.GetServer(serverID)
-	if err != nil {
-		return nil, err
-	}
-
-	return srv.ExecuteTool(toolID, input)
-}
-*/

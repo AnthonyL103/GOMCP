@@ -17,14 +17,31 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func corsMiddleware(next http.Handler) http.Handler {
+func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
+
+	// CORS middleware to handle cross-origin requests. It checks the Origin header against allowed origins and sets appropriate headers.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
-		if allowedOrigin == "" {
-			allowedOrigin = "http://localhost:5173"
+		origin := r.Header.Get("Origin")
+		allowOrigin := ""
+
+		for _, ao := range allowedOrigins {
+			if ao == "*" {
+				allowOrigin = "*"
+				break
+			}
+			if ao == origin {
+				allowOrigin = origin
+				break
+			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		if allowOrigin != "" {
+			//headers for cors are stored in cache for 1 day, so we can set the vary header to origin to ensure that the cache is aware of the origin and
+			// doesn't reuse a working response for a different origin becuase cache can be shared across origins. This is important for security and proper functioning of CORS.
+			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+			w.Header().Set("Vary", "Origin")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Max-Age", "86400")
@@ -112,43 +129,43 @@ func main() {
 	if ag.ApiMode {
 		hub := newHub()
 
-			// Wire callback after hub exists
-			if ap, ok := provider.(*transport.AnthropicProvider); ok {
-				log.Println("Setting AnthropicProvider OnToolCall callback to broadcast tool calls to WS clients")
-				ap.OnToolCall = func(msg chat.Message) {
-					hub.Broadcast(msg)
-				}
+		// Wire callback after hub exists
+		if ap, ok := provider.(*transport.AnthropicProvider); ok {
+			log.Println("Setting AnthropicProvider OnToolCall callback to broadcast tool calls to WS clients")
+			ap.OnToolCall = func(msg chat.Message) {
+				hub.Broadcast(msg)
 			}
-			if op, ok := provider.(*transport.OpenAIProvider); ok {
-				log.Println("Setting OpenAIProvider OnToolCall callback to broadcast tool calls to WS clients")
-				op.OnToolCall = func(msg chat.Message) {
-					hub.Broadcast(msg)
-				}
+		}
+		if op, ok := provider.(*transport.OpenAIProvider); ok {
+			log.Println("Setting OpenAIProvider OnToolCall callback to broadcast tool calls to WS clients")
+			op.OnToolCall = func(msg chat.Message) {
+				hub.Broadcast(msg)
 			}
+		}
 
-			srv := &Server{
-				ag:       ag,
-				provider: provider,
-				chat:     chat.NewChat("session-1", 50),
-				hub:      hub,
-			}
+		srv := &Server{
+			ag:       ag,
+			provider: provider,
+			chat:     chat.NewChat("session-1", 50),
+			hub:      hub,
+		}
 
-			if ag.VoiceChat {
-				vcParser := voicechat.NewVoiceChatParser(srv.chat, ag, provider)
-				go vcParser.Start()
-			}
+		if ag.VoiceChat {
+			vcParser := voicechat.NewVoiceChatParser(srv.chat, ag, provider)
+			go vcParser.Start()
+		}
 
-			mux := http.NewServeMux()
-			mux.HandleFunc("/chat", srv.handleChat)
-			mux.HandleFunc("/ws", srv.handleWS)
-			mux.HandleFunc("/done", srv.handleDone)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/chat", srv.handleChat)
+		mux.HandleFunc("/ws", srv.handleWS)
+		mux.HandleFunc("/done", srv.handleDone)
 
-			log.Println("Listening on :8080")
-			log.Fatal(http.ListenAndServe(":8080", corsMiddleware(mux)))
+		port := ag.ApiPort
+
+		log.Println("Listening on :" + port + " for API mode...")
+		log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux, ag.AllowedOrigins)))
 	} else {
 		runConsoleChat(ag, provider)
 	}
-	
-}
 
-	
+}

@@ -35,6 +35,8 @@ type AgentDetails struct {
 	VoiceChat        bool
 	InfraGeneration  bool
 	ApiMode          bool
+	ApiPort          string
+	AllowedOrigins   []string
 }
 
 type LLMConfig struct {
@@ -53,8 +55,8 @@ type Agent struct {
 	VoiceChat        bool
 	InfraGeneration  bool
 	ApiMode          bool
-	Remote           bool
-	RemoteRoute      string
+	ApiPort          string
+	AllowedOrigins   []string
 }
 
 // return list of valid models for the user
@@ -119,9 +121,8 @@ func NewAgent(
 	voiceChat bool,
 	infraGeneration bool,
 	apiMode bool,
-	remote bool,
-	remoteRoute string,
-
+	apiPort string,
+	allowedOrigins []string,
 ) *Agent {
 	agentID = strings.TrimSpace(agentID)
 	description = strings.TrimSpace(description)
@@ -137,6 +138,10 @@ func NewAgent(
 		panic("Registry cannot be nil")
 	}
 
+	if apiMode && apiPort == "" {
+		panic("ApiPort is required when ApiMode is enabled")
+	}
+
 	validateLLMConfig(LLMConfig)
 
 	return &Agent{
@@ -147,9 +152,9 @@ func NewAgent(
 		ServerGeneration: serverGeneration,
 		VoiceChat:        voiceChat,
 		InfraGeneration:  infraGeneration, // default to false, can be set via config
-		Remote:           remote,
-		RemoteRoute:      remoteRoute,
 		ApiMode:          apiMode,
+		ApiPort:          apiPort,
+		AllowedOrigins:   allowedOrigins,
 	}
 }
 
@@ -183,5 +188,7 @@ func (a *Agent) GetAgentDetails(agent *Agent) *AgentDetails {
 		VoiceChat:        a.VoiceChat,
 		InfraGeneration:  a.InfraGeneration,
 		ApiMode:          a.ApiMode,
+		ApiPort:          a.ApiPort,
+		AllowedOrigins:   a.AllowedOrigins,
 	}
 }

@@ -27,8 +27,8 @@ type AgentDefinition struct {
 	VoiceChat        bool          `yaml:"voice_chat"`
 	InfraGeneration  bool          `yaml:"infra_generation"`
 	ApiMode          bool          `yaml:"api_mode"`
-	Remote           bool          `yaml:"remote"`
-	RemoteRoute      string        `yaml:"remote_route"`
+	ApiPort          string        `yaml:"api_port"`
+	AllowedOrigins   []string      `yaml:"allowed_origins"`
 }
 
 // LLMConfigYAML represents LLM settings from YAML
@@ -115,6 +115,15 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.ApiMode = false
 	}
 
+	if agentDef.ApiMode && agentDef.ApiPort == "" {
+		return nil, fmt.Errorf("ApiPort is required when ApiMode is enabled for agent %s", agentDef.AgentID)
+	}
+
+	if agentDef.AllowedOrigins == nil {
+		fmt.Printf("Allowed origins not specified for agent %s, defaulting to all origins\n", agentDef.AgentID)
+		agentDef.AllowedOrigins = []string{"*"}
+	}
+
 	// Create agent using your NewAgent constructor
 	ag := agent.NewAgent(
 		agentDef.AgentID,
@@ -125,8 +134,8 @@ func ParseAgentConfig() (*agent.Agent, error) {
 		agentDef.VoiceChat,
 		agentDef.InfraGeneration,
 		agentDef.ApiMode,
-		agentDef.Remote,
-		agentDef.RemoteRoute,
+		agentDef.ApiPort,
+		agentDef.AllowedOrigins,
 	)
 
 	return ag, nil
